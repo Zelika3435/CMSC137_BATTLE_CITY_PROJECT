@@ -1,7 +1,9 @@
 # ---- Gradle ----
 .gradle/
+.gradle-tmp-*/
 **/build/
 !gradle/wrapper/gradle-wrapper.jar
+gradle/wrapper/lib/
 
 # If you keep Gradle distributions in-repo
 gradle-*.zip
