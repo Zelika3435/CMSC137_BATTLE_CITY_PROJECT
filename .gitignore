@@ -1,0 +1,40 @@
+# ---- Gradle ----
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# If you keep Gradle distributions in-repo
+gradle-*.zip
+
+# ---- Java ----
+*.class
+*.log
+hs_err_pid*
+
+# ---- IntelliJ IDEA ----
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# ---- VS Code / Cursor ----
+.vscode/
+.cursor/
+
+# ---- Eclipse ----
+.classpath
+.project
+.settings/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Misc ----
+*.tmp
+*.swp
+*.stackdump
+

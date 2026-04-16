@@ -1,0 +1,4 @@
+rootProject.name = "battle-city"
+
+include "core", "lwjgl3"
+

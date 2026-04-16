@@ -1,0 +1,21 @@
+apply plugin: "application"
+
+dependencies {
+  implementation project(":core")
+
+  implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+
+  implementation "org.lwjgl:lwjgl:$lwjgl3Version"
+  implementation "org.lwjgl:lwjgl-glfw:$lwjgl3Version"
+  implementation "org.lwjgl:lwjgl-opengl:$lwjgl3Version"
+
+  runtimeOnly "org.lwjgl:lwjgl:$lwjgl3Version:natives-windows"
+  runtimeOnly "org.lwjgl:lwjgl-glfw:$lwjgl3Version:natives-windows"
+  runtimeOnly "org.lwjgl:lwjgl-opengl:$lwjgl3Version:natives-windows"
+}
+
+application {
+  mainClass = "com.battlecity.lwjgl3.Lwjgl3Launcher"
+}
+
