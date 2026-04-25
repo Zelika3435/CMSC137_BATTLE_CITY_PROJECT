@@ -1,16 +1,28 @@
 ## Battle City (LibGDX) — Starter
 
 ### How to run
-- **Desktop app**:
+- **Desktop app (Windows)**:
 
 ```bash
 .\gradlew.bat :lwjgl3:run
 ```
 
-- **Run headless tests**:
+- **Desktop app (macOS/Linux)**:
+
+```bash
+./gradlew :lwjgl3:run
+```
+
+- **Run headless tests (Windows)**:
 
 ```bash
 .\gradlew.bat :core:test
+```
+
+- **Run headless tests (macOS/Linux)**:
+
+```bash
+./gradlew :core:test
 ```
 
 ### Controls
