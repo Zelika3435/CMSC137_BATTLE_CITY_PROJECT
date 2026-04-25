@@ -20,11 +20,21 @@ final class Tank {
   float halfW = 6f;
   float halfH = 6f;
 
-  Tank(float x, float y) {
+  /** Whether this tank is still alive. */
+  boolean alive = true;
+
+  /** True for the human-controlled player, false for bot enemies. */
+  boolean isPlayer;
+
+  /** Ticks remaining before this tank can fire again (used by bot AI). */
+  int fireCooldownTicks = 0;
+
+  Tank(float x, float y, boolean isPlayer) {
     this.x = x;
     this.y = y;
     this.prevX = x;
     this.prevY = y;
+    this.isPlayer = isPlayer;
   }
 }
 

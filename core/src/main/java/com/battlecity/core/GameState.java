@@ -1,11 +1,14 @@
 package com.battlecity.core;
 
 final class GameState {
-  final Tank player = new Tank(64f, 64f);
+  final Tank player = new Tank(64f, 64f, true);
+
+  /** Enemy bot tanks (3 enemies, spawned at the top of the map). */
+  final Tank[] enemies;
 
   final TileMap map = new TileMap(26, 26, 16f);
 
-  final Projectile[] projectiles = new Projectile[32];
+  final Projectile[] projectiles = new Projectile[64];
 
   GameState() {
     for (int i = 0; i < projectiles.length; i++) {
@@ -40,6 +43,20 @@ final class GameState {
     map.setTile(13, 12, Tile.STEEL);
     map.setTile(12, 13, Tile.STEEL);
     map.setTile(13, 13, Tile.STEEL);
+
+    // Spawn 3 enemy tanks near the top of the map (classic Battle City positions).
+    float mapW = map.worldW();
+    float topY = map.worldH() - 32f; // a couple tiles below the top border
+    enemies = new Tank[] {
+      new Tank(mapW * 0.25f, topY, false),  // top-left area
+      new Tank(mapW * 0.50f, topY, false),  // top-center
+      new Tank(mapW * 0.75f, topY, false),  // top-right area
+    };
+    // Give enemies slightly slower speed so the player has an advantage.
+    for (Tank e : enemies) {
+      e.speed = 80f;
+      e.dir = Direction.DOWN;
+    }
   }
 
   long tickCount = 0L;
@@ -50,4 +67,3 @@ final class GameState {
   boolean prevF3Down = false;
   boolean prevSpaceDown = false;
 }
-

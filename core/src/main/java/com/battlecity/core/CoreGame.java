@@ -74,9 +74,6 @@ public final class CoreGame extends ApplicationAdapter {
   }
 
   private void renderFrame(float alpha) {
-    float x = MathUtils.lerp(state.player.prevX, state.player.x, alpha);
-    float y = MathUtils.lerp(state.player.prevY, state.player.y, alpha);
-
     Gdx.gl.glClearColor(0.08f, 0.08f, 0.10f, 1f);
     Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -99,9 +96,22 @@ public final class CoreGame extends ApplicationAdapter {
       }
     }
 
-    // Player tank placeholder — render-only
-    batch.setColor(0.15f, 0.75f, 0.25f, 1f);
-    batch.draw(whitePixel, x - 6f, y - 6f, 12f, 12f);
+    // Player tank placeholder — render-only (green)
+    if (state.player.alive) {
+      float x = MathUtils.lerp(state.player.prevX, state.player.x, alpha);
+      float y = MathUtils.lerp(state.player.prevY, state.player.y, alpha);
+      batch.setColor(0.15f, 0.75f, 0.25f, 1f);
+      batch.draw(whitePixel, x - 6f, y - 6f, 12f, 12f);
+    }
+
+    // Enemy tank placeholders — render-only (red)
+    for (Tank enemy : state.enemies) {
+      if (!enemy.alive) continue;
+      float ex = MathUtils.lerp(enemy.prevX, enemy.x, alpha);
+      float ey = MathUtils.lerp(enemy.prevY, enemy.y, alpha);
+      batch.setColor(0.85f, 0.20f, 0.15f, 1f);
+      batch.draw(whitePixel, ex - 6f, ey - 6f, 12f, 12f);
+    }
 
     // Projectiles — render-only
     batch.setColor(0.95f, 0.90f, 0.20f, 1f);
@@ -112,14 +122,22 @@ public final class CoreGame extends ApplicationAdapter {
       batch.draw(whitePixel, px - p.halfW, py - p.halfH, p.halfW * 2f, p.halfH * 2f);
     }
 
-    // Debug text (tick + player position) — render-only
+    // Debug text — render-only
     if (state.showDebug) {
       batch.setColor(Color.WHITE);
+
+      int aliveEnemies = 0;
+      for (Tank e : state.enemies) {
+        if (e.alive) aliveEnemies++;
+      }
+
       font.draw(batch,
         "tick=" + state.tickCount
           + "  player=(" + (int) state.player.x + "," + (int) state.player.y + ")"
           + " dir=" + state.player.dir
-          + " fire=" + state.fireCount,
+          + " fire=" + state.fireCount
+          + " enemies=" + aliveEnemies + "/" + state.enemies.length
+          + (state.player.alive ? "" : "  [DEAD]"),
         8f,
         Gdx.graphics.getHeight() - 8f
       );
@@ -135,4 +153,3 @@ public final class CoreGame extends ApplicationAdapter {
     if (batch != null) batch.dispose();
   }
 }
-
