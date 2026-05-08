@@ -3,19 +3,22 @@ package com.battlecity.core;
 final class ProjectileSystem {
   private ProjectileSystem() {}
 
-  static void trySpawn(GameState state) {
+  /**
+   * Attempt to spawn a projectile from the given tank.
+   */
+  static void trySpawn(GameState state, Tank source) {
     for (Projectile p : state.projectiles) {
       if (!p.active) {
-        float muzzle = state.player.halfW + p.halfW + 1f;
-        float x = state.player.x;
-        float y = state.player.y;
-        switch (state.player.dir) {
+        float muzzle = source.halfW + p.halfW + 1f;
+        float x = source.x;
+        float y = source.y;
+        switch (source.dir) {
           case LEFT -> x -= muzzle;
           case RIGHT -> x += muzzle;
           case UP -> y += muzzle;
           case DOWN -> y -= muzzle;
         }
-        p.spawn(x, y, state.player.dir);
+        p.spawn(x, y, source.dir, source.isPlayer);
         return;
       }
     }
@@ -39,7 +42,7 @@ final class ProjectileSystem {
         case DOWN -> p.y -= move;
       }
 
-      // Simple axis-aligned collision: sample the leading edge tile.
+      // Tile collision (unchanged logic)
       int tx;
       int ty;
       switch (p.dir) {
@@ -73,10 +76,36 @@ final class ProjectileSystem {
         continue;
       }
 
+      // Out-of-bounds
       if (p.x < 0f || p.x > map.worldW() || p.y < 0f || p.y > map.worldH()) {
         p.despawn();
+        continue;
+      }
+
+      // Tank-hit detection
+      if (p.ownerIsPlayer) {
+        // Player bullet → check enemy tanks
+        for (Tank enemy : state.enemies) {
+          if (enemy.alive && aabbOverlap(p, enemy)) {
+            enemy.alive = false;
+            p.despawn();
+            break;
+          }
+        }
+      } else {
+        // Enemy bullet → check player tank
+        Tank player = state.player;
+        if (player.alive && aabbOverlap(p, player)) {
+          player.alive = false;
+          p.despawn();
+        }
       }
     }
   }
-}
 
+  /** Simple AABB overlap test between a projectile and a tank. */
+  private static boolean aabbOverlap(Projectile p, Tank t) {
+    return Math.abs(p.x - t.x) < (p.halfW + t.halfW)
+        && Math.abs(p.y - t.y) < (p.halfH + t.halfH);
+  }
+}
