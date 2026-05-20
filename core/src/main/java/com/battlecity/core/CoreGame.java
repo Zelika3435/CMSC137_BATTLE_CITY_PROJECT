@@ -9,147 +9,181 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.math.MathUtils;
+import com.battlecity.game.Simulation;
+import com.battlecity.game.World;
+import com.battlecity.game.snapshot.GameSnapshot;
+import com.battlecity.game.snapshot.NetStatsSnapshot;
+import com.battlecity.input.KeyboardInputMapper;
+import com.battlecity.net.client.GameClient;
+import com.battlecity.net.protocol.ProtocolConstants;
+import com.battlecity.render.SnapshotRenderer;
+import com.battlecity.ui.DebugOverlay;
+import java.io.IOException;
 
 public final class CoreGame extends ApplicationAdapter {
-  private static final float FIXED_DT_SECONDS = 1f / 60f;
-  private static final float MAX_FRAME_TIME_SECONDS = 0.25f;
+    private static final float FIXED_DT_SECONDS = Simulation.FIXED_DT_SECONDS;
+    private static final float MAX_FRAME_TIME_SECONDS = 0.25f;
 
-  private SpriteBatch batch;
-  private BitmapFont font;
-  private Texture whitePixel;
+    private final String serverHost;
+    private final int serverPort;
+    private final boolean offlineMode;
 
-  private final GameState state = new GameState();
-  private float accumulatorSeconds = 0f;
+    private SpriteBatch batch;
+    private BitmapFont font;
+    private Texture whitePixel;
+    private SnapshotRenderer snapshotRenderer;
+    private DebugOverlay debugOverlay;
+    private KeyboardInputMapper inputMapper;
 
-  @Override
-  public void create() {
-    batch = new SpriteBatch();
-    font = new BitmapFont();
-    font.setColor(Color.WHITE);
+    private GameClient netClient;
+    private Simulation offlineSimulation;
+    private GameSnapshot offlinePrev;
+    private GameSnapshot offlineCur;
 
-    Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-    pm.setColor(Color.WHITE);
-    pm.fill();
-    whitePixel = new Texture(pm);
-    pm.dispose();
-  }
+    private float accumulatorSeconds = 0f;
 
-  @Override
-  public void render() {
-    float frameDt = Math.min(Gdx.graphics.getDeltaTime(), MAX_FRAME_TIME_SECONDS);
-    accumulatorSeconds += frameDt;
-
-    while (accumulatorSeconds >= FIXED_DT_SECONDS) {
-      updateTick();
-      accumulatorSeconds -= FIXED_DT_SECONDS;
-    }
-
-    float alpha = accumulatorSeconds / FIXED_DT_SECONDS;
-    renderFrame(alpha);
-  }
-
-  /**
-   * The only method allowed to mutate world state.
-   * Runs at a fixed 60 ticks/sec.
-   */
-  void updateTick() {
-    boolean f3Down = Gdx.input.isKeyPressed(Input.Keys.F3);
-    if (f3Down && !state.prevF3Down) {
-      state.showDebug = !state.showDebug;
-    }
-    state.prevF3Down = f3Down;
-
-    Direction inputDir = null;
-    if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) inputDir = Direction.LEFT;
-    else if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) inputDir = Direction.RIGHT;
-    else if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) inputDir = Direction.UP;
-    else if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) inputDir = Direction.DOWN;
-
-    boolean spaceDown = Gdx.input.isKeyPressed(Input.Keys.SPACE);
-    boolean firePressed = spaceDown && !state.prevSpaceDown;
-    state.prevSpaceDown = spaceDown;
-
-    Sim.step(state, inputDir, firePressed, FIXED_DT_SECONDS);
-  }
-
-  private void renderFrame(float alpha) {
-    Gdx.gl.glClearColor(0.08f, 0.08f, 0.10f, 1f);
-    Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-
-    batch.begin();
-
-    // Tile grid — render-only
-    float tile = state.map.tileSize();
-    for (int ty = 0; ty < state.map.heightTiles(); ty++) {
-      for (int tx = 0; tx < state.map.widthTiles(); tx++) {
-        Tile t = state.map.tileAt(tx, ty);
-        switch (t) {
-          case EMPTY -> batch.setColor(0.16f, 0.16f, 0.18f, 1f);
-          case BRICK -> batch.setColor(0.55f, 0.25f, 0.18f, 1f);
-          case STEEL -> batch.setColor(0.45f, 0.45f, 0.50f, 1f);
-          case BASE -> batch.setColor(0.75f, 0.75f, 0.20f, 1f);
+    public CoreGame(String[] args) {
+        if (args.length >= 2) {
+            this.serverHost = args[0];
+            this.serverPort = Integer.parseInt(args[1]);
+            this.offlineMode = false;
+        } else {
+            this.serverHost = "127.0.0.1";
+            this.serverPort = ProtocolConstants.DEFAULT_PORT;
+            this.offlineMode = true;
         }
-        float px = tx * tile;
-        float py = ty * tile;
-        batch.draw(whitePixel, px, py, tile - 1f, tile - 1f);
-      }
     }
 
-    // Player tank placeholder — render-only (green)
-    if (state.player.alive) {
-      float x = MathUtils.lerp(state.player.prevX, state.player.x, alpha);
-      float y = MathUtils.lerp(state.player.prevY, state.player.y, alpha);
-      batch.setColor(0.15f, 0.75f, 0.25f, 1f);
-      batch.draw(whitePixel, x - 6f, y - 6f, 12f, 12f);
+    @Override
+    public void create() {
+        batch = new SpriteBatch();
+        font = new BitmapFont();
+        font.setColor(Color.WHITE);
+        debugOverlay = new DebugOverlay();
+        inputMapper = new KeyboardInputMapper();
+
+        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pm.setColor(Color.WHITE);
+        pm.fill();
+        whitePixel = new Texture(pm);
+        pm.dispose();
+
+        snapshotRenderer = new SnapshotRenderer(batch, whitePixel, font, debugOverlay);
+
+        try {
+            if (offlineMode) {
+                offlineSimulation = new Simulation(World.createDefault(), true, 42L);
+                offlineCur = offlineSimulation.snapshot();
+                offlinePrev = offlineCur;
+            } else {
+                netClient = new GameClient(serverHost, serverPort, "Player");
+                netClient.connect();
+            }
+        } catch (IOException ex) {
+            throw new RuntimeException("failed to start networking", ex);
+        }
     }
 
-    // Enemy tank placeholders — render-only (red)
-    for (Tank enemy : state.enemies) {
-      if (!enemy.alive) continue;
-      float ex = MathUtils.lerp(enemy.prevX, enemy.x, alpha);
-      float ey = MathUtils.lerp(enemy.prevY, enemy.y, alpha);
-      batch.setColor(0.85f, 0.20f, 0.15f, 1f);
-      batch.draw(whitePixel, ex - 6f, ey - 6f, 12f, 12f);
+    @Override
+    public void render() {
+        float frameDt = Math.min(Gdx.graphics.getDeltaTime(), MAX_FRAME_TIME_SECONDS);
+        accumulatorSeconds += frameDt;
+
+        while (accumulatorSeconds >= FIXED_DT_SECONDS) {
+            updateTick();
+            accumulatorSeconds -= FIXED_DT_SECONDS;
+        }
+
+        float alpha = accumulatorSeconds / FIXED_DT_SECONDS;
+        renderFrame(alpha);
     }
 
-    // Projectiles — render-only
-    batch.setColor(0.95f, 0.90f, 0.20f, 1f);
-    for (Projectile p : state.projectiles) {
-      if (!p.active) continue;
-      float px = MathUtils.lerp(p.prevX, p.x, alpha);
-      float py = MathUtils.lerp(p.prevY, p.y, alpha);
-      batch.draw(whitePixel, px - p.halfW, py - p.halfH, p.halfW * 2f, p.halfH * 2f);
+    void updateTick() {
+        KeyboardInputMapper.LocalInput input = inputMapper.poll(
+                key(Input.Keys.A) || key(Input.Keys.LEFT),
+                key(Input.Keys.D) || key(Input.Keys.RIGHT),
+                key(Input.Keys.W) || key(Input.Keys.UP),
+                key(Input.Keys.S) || key(Input.Keys.DOWN),
+                key(Input.Keys.SPACE),
+                key(Input.Keys.F3)
+        );
+
+        if (input.debugToggle()) {
+            debugOverlay.toggle();
+        }
+
+        if (offlineMode) {
+            java.util.ArrayList<com.battlecity.game.QueuedCommand> commands = new java.util.ArrayList<>();
+            long tick = offlineSimulation.tickCount();
+            int seq = 0;
+            if (input.moveDir() != null) {
+                commands.add(new com.battlecity.game.QueuedCommand(
+                        0, tick, seq++, com.battlecity.game.GameCommand.MOVE_DIR, input.moveDir()));
+            }
+            if (input.firePressed()) {
+                commands.add(new com.battlecity.game.QueuedCommand(
+                        0, tick, seq, com.battlecity.game.GameCommand.FIRE, null));
+            }
+            offlineSimulation.applyCommands(commands);
+            offlinePrev = offlineCur;
+            offlineSimulation.updateTick();
+            offlineCur = offlineSimulation.snapshot();
+            debugOverlay.update(new NetStatsSnapshot(
+                    offlineCur.serverTick(),
+                    FIXED_DT_SECONDS,
+                    0,
+                    0f,
+                    offlineCur.tanks().size(),
+                    offlineCur.projectiles().size(),
+                    offlineCur.tanks().size() + offlineCur.projectiles().size()
+            ));
+            return;
+        }
+
+        if (netClient != null) {
+            netClient.poll();
+            netClient.sendInput(input.moveDir(), input.firePressed());
+            netClient.endTick();
+            debugOverlay.update(netClient.netStats());
+        }
     }
 
-    // Debug text — render-only
-    if (state.showDebug) {
-      batch.setColor(Color.WHITE);
+    private void renderFrame(float alpha) {
+        Gdx.gl.glClearColor(0.08f, 0.08f, 0.10f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+        batch.begin();
 
-      int aliveEnemies = 0;
-      for (Tank e : state.enemies) {
-        if (e.alive) aliveEnemies++;
-      }
+        if (offlineMode) {
+            snapshotRenderer.render(offlinePrev, offlineCur, alpha, 0);
+        } else if (netClient != null) {
+            snapshotRenderer.render(
+                    netClient.previousSnapshot(),
+                    netClient.currentSnapshot(),
+                    alpha,
+                    netClient.playerId()
+            );
+        }
 
-      font.draw(batch,
-        "tick=" + state.tickCount
-          + "  player=(" + (int) state.player.x + "," + (int) state.player.y + ")"
-          + " dir=" + state.player.dir
-          + " fire=" + state.fireCount
-          + " enemies=" + aliveEnemies + "/" + state.enemies.length
-          + (state.player.alive ? "" : "  [DEAD]"),
-        8f,
-        Gdx.graphics.getHeight() - 8f
-      );
+        batch.end();
     }
 
-    batch.end();
-  }
+    private static boolean key(int keycode) {
+        return Gdx.input.isKeyPressed(keycode);
+    }
 
-  @Override
-  public void dispose() {
-    if (whitePixel != null) whitePixel.dispose();
-    if (font != null) font.dispose();
-    if (batch != null) batch.dispose();
-  }
+    @Override
+    public void dispose() {
+        if (netClient != null) {
+            netClient.close();
+        }
+        if (whitePixel != null) {
+            whitePixel.dispose();
+        }
+        if (font != null) {
+            font.dispose();
+        }
+        if (batch != null) {
+            batch.dispose();
+        }
+    }
 }
