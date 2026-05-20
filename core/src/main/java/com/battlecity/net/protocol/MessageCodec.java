@@ -64,7 +64,7 @@ public final class MessageCodec {
         byte version = buffer.get();
         MessageType type = MessageType.fromId(Byte.toUnsignedInt(buffer.get()));
         int sessionId = buffer.getInt();
-        int playerId = Byte.toUnsignedInt(buffer.get());
+        int playerId = buffer.get();
         int seq = buffer.getInt();
         int ack = buffer.getInt();
         long serverTick = buffer.getLong();

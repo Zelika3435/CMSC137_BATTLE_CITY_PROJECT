@@ -107,6 +107,7 @@ public final class GameServer implements AutoCloseable {
 
     private void handleJoin(InetSocketAddress address, NetMessages.NetPacket packet) {
         if (clientsByAddress.containsKey(address)) {
+            sendJoinAck(clientsByAddress.get(address));
             return;
         }
         if (nextPlayerId >= ProtocolConstants.MAX_PLAYERS) {
@@ -120,17 +121,21 @@ public final class GameServer implements AutoCloseable {
         clientsByAddress.put(address, client);
         clientsByPlayerId.put(playerId, client);
 
+        sendJoinAck(client);
+    }
+
+    private void sendJoinAck(ClientConnection client) {
         NetMessages.JoinAckPayload ack = new NetMessages.JoinAckPayload(
-                playerId,
-                sessionId,
+                client.playerId,
+                client.sessionId,
                 0L,
                 simulation.tickCount()
         );
         PacketHeader header = new PacketHeader(
                 ProtocolConstants.PROTOCOL_VERSION,
                 MessageType.JOIN_ACK,
-                sessionId,
-                playerId,
+                client.sessionId,
+                client.playerId,
                 globalSeq++,
                 0,
                 simulation.tickCount()
@@ -138,7 +143,7 @@ public final class GameServer implements AutoCloseable {
         try {
             transport.send(
                     MessageCodec.encode(new NetMessages.NetPacket(header, ack)),
-                    address
+                    client.address
             );
         } catch (IOException ex) {
             ex.printStackTrace();

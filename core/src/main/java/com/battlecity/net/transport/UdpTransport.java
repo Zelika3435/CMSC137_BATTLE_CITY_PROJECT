@@ -16,9 +16,7 @@ public final class UdpTransport implements AutoCloseable {
     private Thread receiverThread;
 
     public UdpTransport(int port) throws SocketException {
-        this.socket = new DatagramSocket(null);
-        socket.setReuseAddress(true);
-        socket.bind(new InetSocketAddress(port));
+        this.socket = new DatagramSocket(port);
     }
 
     public UdpTransport() throws SocketException {
