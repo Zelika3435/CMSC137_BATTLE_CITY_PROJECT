@@ -88,6 +88,14 @@ public final class GameClient implements AutoCloseable {
         long now = System.currentTimeMillis();
         if (now - lastPingSentMs > 1000L) {
             lastPingSentMs = now;
+            if (!connected) {
+                try {
+                    connect();
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+                return;
+            }
             PacketHeader header = new PacketHeader(
                     ProtocolConstants.PROTOCOL_VERSION,
                     MessageType.PING,

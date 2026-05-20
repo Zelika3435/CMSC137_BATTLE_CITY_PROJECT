@@ -9,6 +9,9 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.Viewport;
 import com.battlecity.game.Simulation;
 import com.battlecity.game.World;
 import com.battlecity.game.snapshot.GameSnapshot;
@@ -35,6 +38,9 @@ public final class CoreGame extends ApplicationAdapter {
     private DebugOverlay debugOverlay;
     private KeyboardInputMapper inputMapper;
 
+    private OrthographicCamera camera;
+    private Viewport viewport;
+
     private GameClient netClient;
     private Simulation offlineSimulation;
     private GameSnapshot offlinePrev;
@@ -56,6 +62,9 @@ public final class CoreGame extends ApplicationAdapter {
 
     @Override
     public void create() {
+        camera = new OrthographicCamera();
+        viewport = new FitViewport(26 * 16, 26 * 16, camera);
+
         batch = new SpriteBatch();
         font = new BitmapFont();
         font.setColor(Color.WHITE);
@@ -82,6 +91,11 @@ public final class CoreGame extends ApplicationAdapter {
         } catch (IOException ex) {
             throw new RuntimeException("failed to start networking", ex);
         }
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        viewport.update(width, height, true);
     }
 
     @Override
@@ -151,17 +165,24 @@ public final class CoreGame extends ApplicationAdapter {
     private void renderFrame(float alpha) {
         Gdx.gl.glClearColor(0.08f, 0.08f, 0.10f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+        viewport.apply();
+        batch.setProjectionMatrix(camera.combined);
         batch.begin();
 
         if (offlineMode) {
             snapshotRenderer.render(offlinePrev, offlineCur, alpha, 0);
         } else if (netClient != null) {
-            snapshotRenderer.render(
-                    netClient.previousSnapshot(),
-                    netClient.currentSnapshot(),
-                    alpha,
-                    netClient.playerId()
-            );
+            if (netClient.currentSnapshot() == null) {
+                font.draw(batch, "Connecting to server...", 100, 208);
+            } else {
+                snapshotRenderer.render(
+                        netClient.previousSnapshot(),
+                        netClient.currentSnapshot(),
+                        alpha,
+                        netClient.playerId()
+                );
+            }
         }
 
         batch.end();
