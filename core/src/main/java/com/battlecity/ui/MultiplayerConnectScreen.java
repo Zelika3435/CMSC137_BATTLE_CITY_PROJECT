@@ -224,11 +224,10 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
             ctx.font().draw(ctx.batch(), statusMsg, cx - 180f, startY - NUM_FIELDS * lineH - 8f);
         }
 
-        // Footer hints
+        // Footer hints — two short lines so neither overflows the viewport.
         ctx.batch().setColor(0.38f, 0.38f, 0.38f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "UP/DOWN: move    LEFT/RIGHT: mode    ENTER: confirm    ESC: back",
-                cx - 210f, 22f);
+        ctx.font().draw(ctx.batch(), "UP/DOWN: move    ENTER: confirm",    cx - 106f, 30f);
+        ctx.font().draw(ctx.batch(), "LEFT/RIGHT: toggle mode    ESC: back", cx - 124f, 14f);
     }
 
     @Override

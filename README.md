@@ -68,14 +68,15 @@ MATCH_END               MP_MATCH (live game)
    - `Step N / 4` counter · gold step title · grey hint text
    - Four progress dots (green = done, gold = current, grey = upcoming)
    - `ESC: back to menu` reminder (right side)
-3. **Step 1 — Move south:** press S or ↓ — completes when the tank moves ≥ 1 tile south of spawn.
-4. **Step 2 — Face north:** press W or ↑ — completes when facing UP.
-5. **Step 3 — Destroy brick:** press SPACE while facing north — completes on the first `TileDestroyed(BRICK)` event.
-6. **Step 4 — Reach base:** drive north until within 3 tiles of the BASE cluster.
-7. The panel turns green and shows **"Tutorial complete!"** when all four steps are done.
-8. Press **ESC** at any point to return to the main menu.
+3. **Step 1 — Move south:** only **S / ↓** is active — other movement keys and FIRE are locked. Completes when the tank moves ≥ 1 tile south of spawn.
+4. **Step 2 — Face north:** only **W / ↑** is active — other movement and FIRE are locked. Completes when facing UP.
+5. **Step 3 — Destroy brick:** only **SPACE** is active — all movement is locked. Completes on the first `TileDestroyed(BRICK)` event.
+6. **Step 4 — Destroy the base:** all **movement keys** and **FIRE** are active. Drive north through the cleared brick row and shoot the gold BASE tiles — completes when a `BaseHit` event is detected.
+7. The panel turns green and shows **"Tutorial complete!"** when all four steps are done; all controls are then locked until ESC.
+8. Press **ESC** at any point to return to the main menu. **F3** (debug overlay) is always available.
 
 **Notes:**
+- Controls outside the current step are silently ignored — the game only responds to keys taught by the active step.
 - Steps advance from deterministic simulation conditions (events / position / direction) — never from wall-clock time; the tutorial is headless-testable.
 - The BASE is protected by a STEEL guard wall on its south face; bullets cannot destroy it accidentally.
 - No bots; no networking.

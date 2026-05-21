@@ -16,7 +16,9 @@ public enum AppPhase {
     MP_CONNECT,
     MP_LOBBY,
     MP_MATCH,
-    MATCH_END;
+    MATCH_END,
+    /** Signals the application to exit cleanly. Handled by {@code CoreGame} via {@code Gdx.app.exit()}. */
+    QUIT;
 
     /** Returns {@code true} if this phase drives a fixed-timestep simulation tick loop. */
     public boolean isSimulationPhase() {

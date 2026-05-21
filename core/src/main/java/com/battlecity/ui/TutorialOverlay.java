@@ -20,7 +20,7 @@ import com.battlecity.game.TutorialScript;
 public final class TutorialOverlay {
 
     /** Total height of the background panel in world units. */
-    public static final float PANEL_H = 58f;
+    public static final float PANEL_H = 72f;
 
     /** Thickness of the colour accent strip at the top of the panel. */
     private static final float ACCENT_H = 3f;

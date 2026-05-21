@@ -1,5 +1,6 @@
 package com.battlecity.game;
 
+import com.battlecity.game.event.BaseHit;
 import com.battlecity.game.event.GameEvent;
 import com.battlecity.game.event.TileDestroyed;
 import com.battlecity.game.snapshot.GameSnapshot;
@@ -36,8 +37,8 @@ public final class TutorialScript {
         FACE_NORTH("Face north",                   "Press W or the UP arrow"),
         /** Step 3: Destroy the brick wall. */
         DESTROY_BRICK("Destroy the brick wall",    "Aim north and press SPACE"),
-        /** Step 4: Navigate to the base area. */
-        REACH_BASE("Drive to the base",            "Navigate to the gold BASE tiles"),
+        /** Step 4: Shoot and destroy the BASE tiles. */
+        DESTROY_BASE("Destroy the base",           "Drive north, fire at the BASE"),
         /** Terminal state — tutorial is complete. */
         DONE("Tutorial complete!",                 "Press ESC to return to the menu");
 
@@ -57,22 +58,6 @@ public final class TutorialScript {
 
     /** Number of active steps (excludes {@link Step#DONE}). */
     public static final int TOTAL_STEPS = 4;
-
-    /**
-     * World-space centre of the western BASE tile cluster in the tutorial map.
-     * Derived from {@link MapFactory} constants so both stay in sync.
-     */
-    private static final float BASE_CENTER_X =
-            MapFactory.TUTORIAL_BASE_TX * MapFactory.DEFAULT_TILE_SIZE
-            + MapFactory.DEFAULT_TILE_SIZE / 2f;  // = 104 f
-
-    private static final float BASE_CENTER_Y =
-            MapFactory.TUTORIAL_BASE_TY * MapFactory.DEFAULT_TILE_SIZE
-            + MapFactory.DEFAULT_TILE_SIZE / 2f;  // = 184 f
-
-    /** Tank must be within this distance (world units) of the base centre to complete REACH_BASE. */
-    private static final float BASE_PROXIMITY    = 3f * MapFactory.DEFAULT_TILE_SIZE; // 48 px
-    private static final float BASE_PROXIMITY_SQ = BASE_PROXIMITY * BASE_PROXIMITY;
 
     /** Tank must move this far south from its spawn to complete MOVE_SOUTH. */
     private static final float MOVE_SOUTH_THRESHOLD = MapFactory.DEFAULT_TILE_SIZE; // 1 tile = 16 px
@@ -132,11 +117,12 @@ public final class TutorialScript {
                     }
                 }
             }
-            case REACH_BASE -> {
-                float dx = player.x() - BASE_CENTER_X;
-                float dy = player.y() - BASE_CENTER_Y;
-                if (dx * dx + dy * dy < BASE_PROXIMITY_SQ) {
-                    advance();
+            case DESTROY_BASE -> {
+                for (GameEvent e : events) {
+                    if (e instanceof BaseHit) {
+                        advance();
+                        break;
+                    }
                 }
             }
             case DONE -> { /* terminal — nothing to do */ }
@@ -155,7 +141,7 @@ public final class TutorialScript {
             case MOVE_SOUTH    -> 1;
             case FACE_NORTH    -> 2;
             case DESTROY_BRICK -> 3;
-            case REACH_BASE    -> 4;
+            case DESTROY_BASE  -> 4;
             case DONE          -> TOTAL_STEPS + 1;
         };
     }

@@ -15,10 +15,13 @@ import com.battlecity.core.PhaseHandler;
 public final class MainMenuScreen implements PhaseHandler {
 
     private static final String TITLE = "BATTLE CITY";
-    private static final String[] ITEMS = {"Single Player", "Multiplayer", "Tutorial"};
+    private static final String[] ITEMS   = {"Single Player", "Multiplayer", "Tutorial", "Quit"};
     private static final AppPhase[] TARGETS = {
-        AppPhase.SP_PRESTART, AppPhase.MP_CONNECT, AppPhase.TUTORIAL
+        AppPhase.SP_PRESTART, AppPhase.MP_CONNECT, AppPhase.TUTORIAL, AppPhase.QUIT
     };
+
+    /** Extra vertical gap inserted before the last item (Quit) to visually separate it. */
+    private static final float QUIT_EXTRA_GAP = 14f;
 
     private final PhaseContext ctx;
     private int selected;
@@ -68,7 +71,9 @@ public final class MainMenuScreen implements PhaseHandler {
         ctx.font().draw(ctx.batch(), TITLE, cx - 52f, startY + 56f);
 
         for (int i = 0; i < ITEMS.length; i++) {
-            float y = startY - i * lineH;
+            // Extra gap before the last item (Quit) to visually separate it from the game modes.
+            float extraGap = (i == ITEMS.length - 1) ? QUIT_EXTRA_GAP : 0f;
+            float y = startY - i * lineH - extraGap;
             if (i == selected) {
                 ctx.batch().setColor(1f, 1f, 1f, 1f);
                 ctx.font().draw(ctx.batch(), "> " + ITEMS[i], cx - 68f, y);
@@ -77,11 +82,6 @@ public final class MainMenuScreen implements PhaseHandler {
                 ctx.font().draw(ctx.batch(), "  " + ITEMS[i], cx - 68f, y);
             }
         }
-
-        ctx.batch().setColor(0.4f, 0.4f, 0.4f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "W/S or UP/DOWN to navigate    ENTER/SPACE to select",
-                cx - 152f, 22f);
     }
 
     @Override

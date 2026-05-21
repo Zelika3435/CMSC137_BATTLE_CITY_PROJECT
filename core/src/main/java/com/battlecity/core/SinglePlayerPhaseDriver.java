@@ -155,12 +155,51 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
     }
 
     private KeyboardInputMapper.LocalInput pollInput() {
-        return ctx.inputMapper().poll(
-                Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT),
-                Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT),
-                Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP),
-                Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN),
-                Gdx.input.isKeyPressed(Input.Keys.SPACE),
-                Gdx.input.isKeyPressed(Input.Keys.F3));
+        boolean left  = Gdx.input.isKeyPressed(Input.Keys.A)     || Gdx.input.isKeyPressed(Input.Keys.LEFT);
+        boolean right = Gdx.input.isKeyPressed(Input.Keys.D)     || Gdx.input.isKeyPressed(Input.Keys.RIGHT);
+        boolean up    = Gdx.input.isKeyPressed(Input.Keys.W)     || Gdx.input.isKeyPressed(Input.Keys.UP);
+        boolean down  = Gdx.input.isKeyPressed(Input.Keys.S)     || Gdx.input.isKeyPressed(Input.Keys.DOWN);
+        boolean fire  = Gdx.input.isKeyPressed(Input.Keys.SPACE);
+        boolean f3    = Gdx.input.isKeyPressed(Input.Keys.F3);
+
+        // In tutorial mode, mask inputs to only what the current step teaches.
+        if (tutorialScript != null) {
+            switch (tutorialScript.currentStep()) {
+                case MOVE_SOUTH -> {
+                    // Only S / ↓ — block all other movement and fire.
+                    left  = false;
+                    right = false;
+                    up    = false;
+                    fire  = false;
+                }
+                case FACE_NORTH -> {
+                    // Only W / ↑ — block other movement and fire.
+                    left  = false;
+                    right = false;
+                    down  = false;
+                    fire  = false;
+                }
+                case DESTROY_BRICK -> {
+                    // Only SPACE — block all movement.
+                    left  = false;
+                    right = false;
+                    up    = false;
+                    down  = false;
+                }
+                case DESTROY_BASE -> {
+                    // All movement and fire allowed — player must navigate to and shoot the BASE.
+                }
+                case DONE -> {
+                    // Tutorial finished — lock everything; player exits via ESC.
+                    left  = false;
+                    right = false;
+                    up    = false;
+                    down  = false;
+                    fire  = false;
+                }
+            }
+        }
+
+        return ctx.inputMapper().poll(left, right, up, down, fire, f3);
     }
 }

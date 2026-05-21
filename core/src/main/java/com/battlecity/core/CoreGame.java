@@ -202,6 +202,10 @@ public final class CoreGame extends ApplicationAdapter {
 
         // Apply the transition after the current frame has been drawn so the handler always
         // completes cleanly before being torn down.
+        if (next == AppPhase.QUIT) {
+            Gdx.app.exit();
+            return;
+        }
         if (next != currentPhase) {
             if (next == AppPhase.MATCH_END) {
                 captureMatchEndSnapshot();

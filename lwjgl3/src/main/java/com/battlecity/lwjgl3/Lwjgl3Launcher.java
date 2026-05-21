@@ -19,6 +19,7 @@ public final class Lwjgl3Launcher {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Battle City");
         config.setWindowedMode(26 * 48, 26 * 48);
+        config.setResizable(false);
 
         if (isWsl()) {
             config.disableAudio(true);

@@ -132,7 +132,7 @@ public class TutorialScriptTest {
         // From y≈40 (south of spawn), projectile travels ~90 px → ~23 ticks.
         tickFireThenMove(ctrl, script, Direction.UP, 80);
 
-        assertEquals(TutorialScript.Step.REACH_BASE, script.currentStep());
+        assertEquals(TutorialScript.Step.DESTROY_BASE, script.currentStep());
         assertEquals(4, script.currentStepNumber());
     }
 
@@ -166,27 +166,34 @@ public class TutorialScriptTest {
     }
 
     /**
-     * REACH_BASE advances when the tank reaches within 3 tiles of the BASE centre.
-     * Base is at tile (6, 11) → world centre (104, 184).
+     * DESTROY_BASE advances when a {@link com.battlecity.game.event.BaseHit} event is detected.
+     *
+     * <p>After step 3 destroys the BRICK at (6,8), the path northward through (6,9) and (6,10)
+     * is clear (no guard wall).  The player drives north and fires upward; the bullet reaches
+     * the BASE at tile (6,11) and emits a BaseHit event.
      */
     @Test
-    public void reachBaseAdvancesWhenNearBase() {
+    public void destroyBaseAdvancesOnBaseHit() {
         LocalMatchController ctrl   = LocalMatchController.forTutorial();
         TutorialScript       script = new TutorialScript();
         script.init(ctrl.snapshot());
 
-        // Walk through steps 1–3.
-        tickUntilStep(ctrl, script, TutorialScript.Step.FACE_NORTH, Direction.DOWN, false, 30);
-        tickUntilStep(ctrl, script, TutorialScript.Step.DESTROY_BRICK, Direction.UP, false, 5);
+        // Steps 1–3.
+        tickUntilStep(ctrl, script, TutorialScript.Step.FACE_NORTH,    Direction.DOWN, false, 30);
+        tickUntilStep(ctrl, script, TutorialScript.Step.DESTROY_BRICK, Direction.UP,   false, 5);
         tickFireThenMove(ctrl, script, Direction.UP, 80);
 
-        assertEquals(TutorialScript.Step.REACH_BASE, script.currentStep());
+        assertEquals(TutorialScript.Step.DESTROY_BASE, script.currentStep(),
+                "Should be on DESTROY_BASE after step 3 completes");
 
-        // Drive north to base (≈150 more px from near-spawn; 75+ ticks at 2 f/tick).
-        tickUntilStep(ctrl, script, TutorialScript.Step.DONE, Direction.UP, false, 150);
+        // Drive north and fire; clear path to BASE after brick was destroyed.
+        // Allow generous ticks: ~50 to close distance + ~10 for projectile travel.
+        tickUntilStep(ctrl, script, TutorialScript.Step.DONE, Direction.UP, true, 250);
 
-        assertTrue(script.isDone(), "Script should be DONE after reaching base");
+        assertTrue(script.isDone(), "Script must be DONE after BaseHit");
         assertEquals(TutorialScript.TOTAL_STEPS + 1, script.currentStepNumber());
+        assertTrue(ctrl.isMatchOver(),
+                "matchOver must be true once the BASE is destroyed");
     }
 
     /**
@@ -202,28 +209,27 @@ public class TutorialScriptTest {
         TutorialScript.Step[] expectedOrder = {
                 TutorialScript.Step.FACE_NORTH,
                 TutorialScript.Step.DESTROY_BRICK,
-                TutorialScript.Step.REACH_BASE,
+                TutorialScript.Step.DESTROY_BASE,
                 TutorialScript.Step.DONE
         };
 
         // Step 1 → FACE_NORTH
         tickUntilStep(ctrl, script, expectedOrder[0], Direction.DOWN, false, 30);
-        List<TutorialStepComplete> ev1 = script.drainUiEvents(); // drain any residual
-        // (events may already have been drained by tickUntilStep — that's fine)
+        script.drainUiEvents(); // drain any residual
 
         // Step 2 → DESTROY_BRICK
         tickUntilStep(ctrl, script, expectedOrder[1], Direction.UP, false, 5);
 
-        // Step 3 → REACH_BASE
+        // Step 3 → DESTROY_BASE
         tickFireThenMove(ctrl, script, Direction.UP, 80);
-        assertEquals(TutorialScript.Step.REACH_BASE, script.currentStep());
+        assertEquals(TutorialScript.Step.DESTROY_BASE, script.currentStep());
 
-        // Step 4 → DONE
-        tickUntilStep(ctrl, script, expectedOrder[3], Direction.UP, false, 150);
+        // Step 4 → DONE: drive north and fire at the BASE
+        tickUntilStep(ctrl, script, expectedOrder[3], Direction.UP, true, 250);
 
         assertTrue(script.isDone());
-        assertFalse(ctrl.isMatchOver(),
-                "Match world must not be over during tutorial (no BASE destroyed by player)");
+        assertTrue(ctrl.isMatchOver(),
+                "matchOver must be true once the BASE is destroyed in the final step");
     }
 
     /**

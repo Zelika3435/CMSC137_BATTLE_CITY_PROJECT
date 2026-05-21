@@ -29,10 +29,9 @@ public final class MapFactory {
     public static final int TUTORIAL_BASE_TY = 11;
 
     /**
-     * Row of the STEEL guard wall placed immediately south of the BASE tiles.
-     * This wall prevents northward projectiles from accidentally destroying the BASE,
-     * keeping the simulation from freezing during the "reach base" tutorial step.
-     * The tank can still get within proximity of the BASE by approaching from the sides.
+     * Row immediately south of the BASE tiles — kept as a named constant for map documentation.
+     * The guard wall that previously occupied this row has been removed: step 4 of the tutorial
+     * now requires the player to fire at and destroy the BASE, so the path must be clear.
      */
     public static final int TUTORIAL_BASE_GUARD_TY = TUTORIAL_BASE_TY - 1; // = 10
 
@@ -80,10 +79,10 @@ public final class MapFactory {
      * <p>Layout (tile y=0 is the BOTTOM row, ty increases northward):
      * <pre>
      *   ty=12  S S S S S S S S S S S S S   ← top steel border
-     *   ty=11  S . . . . . B B . . . . S   ← BASE at tx=6,7
-     *   ty=10  S . . . . . G G . . . . S   ← STEEL guard wall (protects base)
+     *   ty=11  S . . . . . B B . . . . S   ← BASE at tx=6,7 (gold — destroy these in step 4)
+     *   ty=10  S . . . . . . . . . . . S   ← clear path to the BASE
      *   ty= 9  S . . . . . . . . . . . S
-     *   ty= 8  S . . . O B B B . . . . S   ← O=STEEL obstacle, B=BRICK targets
+     *   ty= 8  S . . . O B B B . . . . S   ← O=STEEL obstacle, B=BRICK targets (destroy in step 3)
      *   ty= 7  S . . . . . . . . . . . S
      *   ty= 6  S . . . . . . . . . . . S
      *   ty= 5  S . . . . . . . . . . . S
@@ -94,9 +93,8 @@ public final class MapFactory {
      *   ty= 0  S S S S S S S S S S S S S   ← bottom steel border
      * </pre>
      *
-     * <p>The STEEL guard wall at {@link #TUTORIAL_BASE_GUARD_TY} (ty=10) prevents northward
-     * projectiles from accidentally destroying the BASE and freezing the simulation, while
-     * still allowing the tank to satisfy the "reach base" proximity condition from the sides.
+     * <p>Step 3 destroys a BRICK at tx=6,ty=8, opening a clear northward path to the BASE.
+     * Step 4 requires the player to fire at and destroy the BASE tiles.
      */
     public static TileMap createTutorialMap() {
         TileMap map = new TileMap(TUTORIAL_WIDTH, TUTORIAL_HEIGHT, DEFAULT_TILE_SIZE);
@@ -111,7 +109,7 @@ public final class MapFactory {
             map.setTile(TUTORIAL_WIDTH - 1, y, Tile.STEEL);
         }
 
-        // Brick targets: 3 bricks in a row — fire to destroy them
+        // Brick targets: 3 bricks in a row — fire to destroy them (step 3)
         for (int tx = TUTORIAL_BRICK_TX_START; tx <= TUTORIAL_BRICK_TX_END; tx++) {
             map.setTile(tx, TUTORIAL_BRICK_TY, Tile.BRICK);
         }
@@ -119,13 +117,12 @@ public final class MapFactory {
         // Steel obstacle: to the left of the bricks — demonstrates steel stops bullets
         map.setTile(TUTORIAL_STEEL_TX, TUTORIAL_BRICK_TY, Tile.STEEL);
 
-        // Base tiles: two-wide, near the north end
+        // Base tiles: two-wide, near the north end — destroy these in step 4
         map.setTile(TUTORIAL_BASE_TX,     TUTORIAL_BASE_TY, Tile.BASE);
         map.setTile(TUTORIAL_BASE_TX + 1, TUTORIAL_BASE_TY, Tile.BASE);
 
-        // Steel guard wall: spans the south face of both BASE tiles to stop projectiles
-        map.setTile(TUTORIAL_BASE_TX,     TUTORIAL_BASE_GUARD_TY, Tile.STEEL);
-        map.setTile(TUTORIAL_BASE_TX + 1, TUTORIAL_BASE_GUARD_TY, Tile.STEEL);
+        // No guard wall: the path from the brick row to the BASE (ty=9,10) is intentionally
+        // clear so the player can shoot the BASE after completing step 3.
 
         return map;
     }
