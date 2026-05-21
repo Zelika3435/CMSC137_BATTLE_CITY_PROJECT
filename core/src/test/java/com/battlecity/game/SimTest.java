@@ -53,6 +53,7 @@ final class SimTest {
                 tank.alive = false;
             }
         }
+        clearMap(world);
 
         int wallTx = 5;
         int wallTy = 4;
@@ -167,6 +168,82 @@ final class SimTest {
             }
         }
         assertFalse(target.alive);
+    }
+
+    @Test
+    void cornerBaseAssignment() {
+        World world = World.createDefault();
+        // Test bottom-left quadrant (P0)
+        assertEquals(0, world.getPlayerIdForTile(1, 1));
+        assertEquals(0, world.getPlayerIdForTile(3, 2));
+
+        // Test bottom-right quadrant (P1)
+        assertEquals(1, world.getPlayerIdForTile(24, 1));
+        assertEquals(1, world.getPlayerIdForTile(22, 2));
+
+        // Test top-left quadrant (P2)
+        assertEquals(2, world.getPlayerIdForTile(1, 24));
+        assertEquals(2, world.getPlayerIdForTile(3, 23));
+
+        // Test top-right quadrant (P3)
+        assertEquals(3, world.getPlayerIdForTile(24, 24));
+        assertEquals(3, world.getPlayerIdForTile(22, 23));
+    }
+
+    @Test
+    void tankRespawnWhenBaseExists() {
+        Simulation simulation = new Simulation(World.createDefault(), false, 0L);
+        World world = simulation.world();
+        Tank player = world.tanks[0];
+        
+        // Kill player tank
+        player.alive = false;
+        player.respawnCooldownTicks = 120; // set 120 ticks
+        
+        // Step simulation 119 ticks
+        for (int i = 0; i < 119; i++) {
+            simulation.updateTick();
+        }
+        assertFalse(player.alive);
+        assertEquals(1, player.respawnCooldownTicks);
+        
+        // 120th tick: player should respawn
+        simulation.updateTick();
+        assertTrue(player.alive);
+        assertEquals(-1, player.respawnCooldownTicks);
+        assertEquals(player.spawnX, player.x);
+        assertEquals(player.spawnY, player.y);
+    }
+
+    @Test
+    void playerEliminationWhenBaseAnnihilated() {
+        Simulation simulation = new Simulation(World.createDefault(), false, 0L);
+        World world = simulation.world();
+        Tank player = world.tanks[0];
+
+        // Annihilate Player 0's bases in bottom-left corner
+        // Bottom-left corner has bases at x=1..3, y=1..2
+        assertTrue(world.hasBaseLeft(0));
+        
+        for (int x = 1; x <= 3; x++) {
+            for (int y = 1; y <= 2; y++) {
+                if (x == 3 && y == 2) continue; // Leave one base
+                world.map.setTile(x, y, Tile.EMPTY);
+            }
+        }
+        
+        // Emit a BaseHit on the final remaining base of Player 0 at (3,2)
+        world.events.emit(new BaseHit(3, 2, 1));
+        
+        // Run a simulation step to process the combat event
+        simulation.updateTick();
+        
+        assertFalse(world.hasBaseLeft(0));
+        assertFalse(player.alive);
+        assertTrue(player.eliminated);
+        assertEquals(-1, player.respawnCooldownTicks);
+        assertTrue(world.baseDestroyed);
+        assertTrue(world.matchOver);
     }
 
     private static void clearMap(World world) {

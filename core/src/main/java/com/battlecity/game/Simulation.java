@@ -83,11 +83,33 @@ public final class Simulation {
 
         lastAppliedEvents.clear();
 
+        // Tick down respawn timers and respawn tanks if they have a base left
+        for (int playerId = 0; playerId < World.MAX_PLAYERS; playerId++) {
+            Tank tank = world.tanks[playerId];
+            if (tank != null && !tank.alive && !tank.eliminated && tank.respawnCooldownTicks > 0) {
+                tank.respawnCooldownTicks--;
+                if (tank.respawnCooldownTicks == 0) {
+                    if (world.hasBaseLeft(playerId)) {
+                        tank.alive = true;
+                        tank.x = tank.spawnX;
+                        tank.y = tank.spawnY;
+                        tank.prevX = tank.spawnX;
+                        tank.prevY = tank.spawnY;
+                        tank.dir = (playerId < 2 ? Direction.UP : Direction.DOWN);
+                        tank.respawnCooldownTicks = -1;
+                    } else {
+                        tank.respawnCooldownTicks = -1; // Permanently dead
+                        tank.eliminated = true;
+                    }
+                }
+            }
+        }
+
         if (offlineBotMode && botAI != null) {
             Tank player = world.tanks[0];
             for (int i = 1; i < World.MAX_PLAYERS; i++) {
                 Tank enemy = world.tanks[i];
-                if (enemy != null) {
+                if (enemy != null && enemy.alive) {
                     botAI.update(enemy, world, FIXED_DT_SECONDS, player);
                 }
             }
@@ -110,6 +132,28 @@ public final class Simulation {
         CollisionSystem.resolveTankVsTanks(world);
         ProjectileSystem.tick(world, FIXED_DT_SECONDS);
         lastAppliedEvents.addAll(CombatSystem.processPending(world));
+
+        // Check match-over conditions
+        // 1. If Player 0 is eliminated (no base left and dead), match is over (loss)
+        Tank p0 = world.tankByPlayerId(0);
+        if (p0 != null && p0.eliminated) {
+            world.matchOver = true;
+        }
+
+        // 2. If all other players are eliminated, match is over (win for Player 0)
+        if (world.map.widthTiles() != MapFactory.TUTORIAL_WIDTH) {
+            int otherActive = 0;
+            for (int i = 1; i < World.MAX_PLAYERS; i++) {
+                Tank other = world.tankByPlayerId(i);
+                if (other != null && !other.eliminated) {
+                    otherActive++;
+                }
+            }
+            if (otherActive == 0 && p0 != null && !p0.eliminated) {
+                world.matchOver = true;
+            }
+        }
+
         world.tickCount++;
     }
 

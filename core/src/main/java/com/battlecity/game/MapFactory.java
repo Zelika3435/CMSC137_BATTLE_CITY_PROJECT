@@ -37,65 +37,150 @@ public final class MapFactory {
 
     private MapFactory() {}
 
+    /**
+     * Creates the default 26×26 arena with full left-right and top-bottom
+     * mirror symmetry so every player spawns in an equally fair position.
+     *
+     * <p>Layout highlights (tile y=0 is BOTTOM, y=25 is TOP):
+     * <ul>
+     *   <li>STEEL border on all four edges.</li>
+     *   <li>Corner bases — steel L-shaped pockets protect each spawn.</li>
+     *   <li>Brick corridor walls create lanes and chokepoints.</li>
+     *   <li>Steel pillars provide permanent cover at key positions.</li>
+     *   <li>Central BASE (2 tiles) at (12,12)–(13,12), equidistant from all spawns.</li>
+     * </ul>
+     *
+     * <p>Spawns (set by {@link #spawnDefaultTanks}):
+     * <pre>
+     *   P0  bottom-left   (~tile  6, 3)
+     *   P1  bottom-right  (~tile 19, 3)
+     *   P2  top-left      (~tile  6,22)
+     *   P3  top-right     (~tile 19,22)
+     * </pre>
+     */
     public static TileMap createDefaultMap() {
         TileMap map = new TileMap(DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_TILE_SIZE);
+        final int W = DEFAULT_WIDTH;   // 26
+        final int H = DEFAULT_HEIGHT;  // 26
 
-        for (int x = 0; x < map.widthTiles(); x++) {
+        // ── 1. STEEL border ──────────────────────────────────────────────
+        for (int x = 0; x < W; x++) {
             map.setTile(x, 0, Tile.STEEL);
-            map.setTile(x, map.heightTiles() - 1, Tile.STEEL);
+            map.setTile(x, H - 1, Tile.STEEL);
         }
-        for (int y = 0; y < map.heightTiles(); y++) {
+        for (int y = 0; y < H; y++) {
             map.setTile(0, y, Tile.STEEL);
-            map.setTile(map.widthTiles() - 1, y, Tile.STEEL);
+            map.setTile(W - 1, y, Tile.STEEL);
         }
 
-        for (int y = 6; y <= 8; y++) {
-            for (int x = 6; x <= 9; x++) {
-                map.setTile(x, y, Tile.BRICK);
+        // ── 2. Corner base structures (6 base blocks per corner) ────────
+        // Each corner gets 6 base blocks (3x2 cluster), shielded by a mix of brick and steel walls.
+        // Bottom-left (P0): bases at (1,1) to (3,2)
+        for (int x = 1; x <= 3; x++) {
+            for (int y = 1; y <= 2; y++) {
+                placeSymBase(map, x, y);
             }
         }
-        for (int y = 14; y <= 16; y++) {
-            for (int x = 15; x <= 18; x++) {
-                map.setTile(x, y, Tile.BRICK);
-            }
+        
+        // Shield around the base: Steel anchors to make it harder to destroy
+        placeSymSteel(map, 4, 3);
+        placeSymSteel(map, 3, 3);
+        placeSymSteel(map, 4, 1);
+        
+        // Brick walls for the rest of the shield
+        placeSymBrick(map, 1, 3);
+        placeSymBrick(map, 2, 3);
+        placeSymBrick(map, 4, 2);
+
+        // ── 3. Approach corridors — brick walls from corners toward center ─
+        // These create diagonal "lanes" players must navigate to leave base.
+        // Horizontal runs near each corner (row 5/20)
+        for (int x = 5; x <= 8; x++) {
+            placeSymBrick(map, x, 5);
+        }
+        // Vertical runs near each corner (col 5/20)
+        for (int y = 5; y <= 8; y++) {
+            placeSymBrick(map, 5, y);
         }
 
+        // ── 4. Mid-field bunkers — brick cover with steel anchors ────────
+        // 2×3 brick bunkers at the midpoint of each edge, with 1 steel anchor.
+        // South/North bunkers (centred on x=12,13 at y=5 and y=20)
+        placeSymBrick(map, 11, 5);
+        placeSymBrick(map, 12, 5);
+        placeSymSteel(map, 12, 4);  // steel anchor behind bunker
+        // Wall extending down to block horizontal spawn kills
+        placeSymBrick(map, 12, 3);
+        placeSymBrick(map, 12, 2);
+
+        // West/East bunkers (centred on y=12,13 at x=5 and x=20)
+        placeSymBrick(map, 5, 11);
+        placeSymBrick(map, 5, 12);
+        placeSymSteel(map, 4, 12);  // steel anchor behind bunker
+
+        // ── 5. Inner ring — brick walls forming lanes around center ──────
+        // Horizontal inner walls (row 9/16)
+        for (int x = 7; x <= 10; x++) {
+            placeSymBrick(map, x, 9);
+        }
+        // Vertical inner walls (col 9/16)
+        for (int y = 7; y <= 10; y++) {
+            placeSymBrick(map, 9, y);
+        }
+
+        // ── 6. Steel pillars — permanent cover at key intersections ──────
+        // Single steel tiles at the 4 "crossroads" points
+        placeSymSteel(map, 9, 5);
+        placeSymSteel(map, 5, 9);
+        // Centre steel pillar (4 tiles forming a 2×2 block)
         map.setTile(12, 12, Tile.STEEL);
         map.setTile(13, 12, Tile.STEEL);
         map.setTile(12, 13, Tile.STEEL);
         map.setTile(13, 13, Tile.STEEL);
 
-        int baseX = map.widthTiles() / 2 - 1;
-        int baseY = 2;
-        map.setTile(baseX, baseY, Tile.BASE);
-        map.setTile(baseX + 1, baseY, Tile.BASE);
+        // ── 7. Central approach brick walls — guard the center ───────────
+        // Brick walls on all 4 sides of the centre pillar
+        placeSymBrick(map, 11, 12);
+        placeSymBrick(map, 12, 11);
+        placeSymBrick(map, 11, 11);
+
+        // ── 8. Scattered cover — small brick patches in open lanes ───────
+        // Break up long sight lines so combat is closer-range
+        placeSymBrick(map, 3, 7);
+        placeSymBrick(map, 7, 3);
+        placeSymBrick(map, 7, 7);   // intersection cover
+        placeSymBrick(map, 11, 7);
+        placeSymBrick(map, 7, 11);
+        placeSymBrick(map, 11, 9);
+        placeSymBrick(map, 9, 11);
 
         return map;
     }
 
-    /**
-     * 13×13 tutorial map.
-     *
-     * <p>Layout (tile y=0 is the BOTTOM row, ty increases northward):
-     * <pre>
-     *   ty=12  S S S S S S S S S S S S S   ← top steel border
-     *   ty=11  S . . . . . B B . . . . S   ← BASE at tx=6,7 (gold — destroy these in step 4)
-     *   ty=10  S . . . . . . . . . . . S   ← clear path to the BASE
-     *   ty= 9  S . . . . . . . . . . . S
-     *   ty= 8  S . . . O B B B . . . . S   ← O=STEEL obstacle, B=BRICK targets (destroy in step 3)
-     *   ty= 7  S . . . . . . . . . . . S
-     *   ty= 6  S . . . . . . . . . . . S
-     *   ty= 5  S . . . . . . . . . . . S
-     *   ty= 4  S . . . . . . . . . . . S
-     *   ty= 3  S . . . . . P . . . . . S   ← player 0 spawn at tx=6
-     *   ty= 2  S . . . . . . . . . . . S
-     *   ty= 1  S . . . . . . . . . . . S
-     *   ty= 0  S S S S S S S S S S S S S   ← bottom steel border
-     * </pre>
-     *
-     * <p>Step 3 destroys a BRICK at tx=6,ty=8, opening a clear northward path to the BASE.
-     * Step 4 requires the player to fire at and destroy the BASE tiles.
-     */
+    // ── Symmetry helpers ─────────────────────────────────────────────────
+    // Place a tile at (x,y) and its 3 mirror positions (LR + TB symmetry).
+
+    private static void placeSym4(TileMap map, int x, int y, Tile tile) {
+        final int mx = DEFAULT_WIDTH - 1 - x;
+        final int my = DEFAULT_HEIGHT - 1 - y;
+        map.setTile(x,  y,  tile);
+        map.setTile(mx, y,  tile);
+        map.setTile(x,  my, tile);
+        map.setTile(mx, my, tile);
+    }
+
+    private static void placeSymBrick(TileMap map, int x, int y) {
+        placeSym4(map, x, y, Tile.BRICK);
+    }
+
+    private static void placeSymSteel(TileMap map, int x, int y) {
+        placeSym4(map, x, y, Tile.STEEL);
+    }
+
+    private static void placeSymBase(TileMap map, int x, int y) {
+        placeSym4(map, x, y, Tile.BASE);
+    }
+
     public static TileMap createTutorialMap() {
         TileMap map = new TileMap(TUTORIAL_WIDTH, TUTORIAL_HEIGHT, DEFAULT_TILE_SIZE);
 
