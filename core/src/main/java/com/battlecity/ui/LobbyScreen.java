@@ -169,9 +169,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
             }
         }
 
-        ctx.batch().setColor(0.55f, 0.55f, 0.55f, 1f);
-        ctx.font().draw(ctx.batch(), "ESC: back to menu", cx - 68f, cy - 128f);
-        ctx.batch().setColor(1f, 1f, 1f, 1f);
+
     }
 
     /**
@@ -305,25 +303,33 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
 
         NetMessages.LobbyPlayerEntry me = snap.playerEntry(netClient.playerId());
         boolean amReady = me != null && me.ready();
-        
-        float hintsY = cy - 82f;
-        
-        ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, hintsY);
+
+        // Lower-right corner anchor — keeps all action hints away from the left-side chat panel.
+        float rightX    = cx + 40f;
+        float hintEnter = 80f;   // y for the ENTER / host-status line  (topmost)
+        float hintEsc   = 60f;   // y for the ESC: back to menu line
+        float hintR     = 40f;   // y for the R: toggle line             (lowermost)
+        float hintIp    = 20f;   // y for the Share IP line (host only)
+
+        ctx.batch().setColor(0.55f, 0.55f, 0.55f, 1f);
+        ctx.font().draw(ctx.batch(), "ESC: back to menu", rightX, hintEsc);
+        ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
+        ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", rightX, hintR);
 
         if (netClient.isHost()) {
             if (snap.phase() == LobbyPhase.LOBBY && canForceStartMatch(snap)) {
                 ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-                ctx.font().draw(ctx.batch(), "      ENTER: start match", cx - 88f, cy - 82f);
+                ctx.font().draw(ctx.batch(), "ENTER: start match", rightX, hintEnter);
             } else if (snap.phase() == LobbyPhase.COUNTDOWN) {
                 ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
-                ctx.font().draw(ctx.batch(), "      Match starting...", cx - 88f, cy - 82f);
+                ctx.font().draw(ctx.batch(), "Match starting...", rightX, hintEnter);
             } else if (snap.phase() == LobbyPhase.END) {
                 ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
-                ctx.font().draw(ctx.batch(), "Waiting for next lobby...", cx - 88f, cy - 82f);
+                ctx.font().draw(ctx.batch(), "Waiting for next lobby...", rightX, hintEnter);
             }
             if (hostIp != null) {
                 ctx.batch().setColor(0.55f, 0.9f, 0.55f, 1f);
-                ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, cx - 8f, hintsY - 14f);
+                ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, rightX, hintIp);
             }
         }
 
@@ -336,7 +342,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         int numMsgs = Math.min(maxMsgs, msgs.size());
         int startIdx = msgs.size() - numMsgs;
 
-        float bottomChatY = 40f;
+        float bottomChatY = 60f;  // bottom message row — aligns with hintEsc
         for (int i = 0; i < numMsgs; i++) {
             GameClient.ChatEntry msg = msgs.get(startIdx + i);
             float msgY = bottomChatY + (numMsgs - 1 - i) * 16f;
@@ -347,7 +353,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
             ctx.font().draw(ctx.batch(), msg.message(), leftX + 90f, msgY);
         }
 
-        float inputY = 20f;
+        float inputY = 40f;  // input line aligns with hintR (lowermost command)
         if (chatMode) {
             ctx.batch().setColor(0.4f, 1f, 0.4f, 1f); // Bright green indicator
             ctx.font().draw(ctx.batch(), "> " + chatBuffer.toString() + (elapsed % 1f < 0.5f ? "_" : ""), leftX, inputY);
