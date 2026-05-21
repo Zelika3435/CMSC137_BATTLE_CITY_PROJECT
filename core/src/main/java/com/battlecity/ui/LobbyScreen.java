@@ -59,6 +59,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
     private float elapsed;
     private boolean prevEscape;
     private boolean prevR;
+    private boolean prevEnter;
 
     /**
      * Set to {@code true} the moment {@link #update} decides to transition to
@@ -312,7 +313,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         if (netClient.isHost()) {
             if (canForceStartMatch(snap)) {
                 ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-                ctx.font().draw(ctx.batch(), "ENTER/SPACE: start match", cx - 88f, cy - 82f);
+                ctx.font().draw(ctx.batch(), "      ENTER: start match", cx - 88f, cy - 82f);
             } else if (snap.phase() == LobbyPhase.END) {
                 ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
                 ctx.font().draw(ctx.batch(), "Waiting for next lobby...", cx - 88f, cy - 82f);
@@ -359,6 +360,27 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
 
     private void handleLobbyKeys() {
         boolean rNow = Gdx.input.isKeyPressed(Input.Keys.R);
+        boolean tNow = Gdx.input.isKeyPressed(Input.Keys.T);
+        boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
+
+        if (chatMode) {
+            if (enterNow && !prevEnter) {
+                if (!chatBuffer.isEmpty()) {
+                    netClient.sendChat(chatBuffer.toString());
+                }
+                chatMode = false;
+                chatBuffer.setLength(0);
+            }
+            prevEnter = enterNow;
+            return;
+        }
+
+        if (tNow && !prevT) {
+            chatMode = true;
+            chatBuffer.setLength(0);
+        }
+        prevT = tNow;
+        prevEnter = enterNow;
 
         if (rNow && !prevR) {
             LobbySnapshot snap = netClient.lobbySnapshot();
@@ -384,5 +406,29 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
                 || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)
                 || Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
+    }
+
+    @Override
+    public boolean keyTyped(char character) {
+        if (!chatMode) return false;
+
+        // Handle backspace
+        if (character == '\b' && !chatBuffer.isEmpty()) {
+            chatBuffer.setLength(chatBuffer.length() - 1);
+            return true;
+        }
+
+        // Enter and Escape are handled in handleLobbyKeys/update
+        if (character == '\r' || character == '\n' || character == 27) {
+            return true;
+        }
+
+        // Only append printable ASCII characters
+        if (character >= 32 && character <= 126 && chatBuffer.length() < 128) {
+            chatBuffer.append(character);
+            return true;
+        }
+
+        return false;
     }
 }
