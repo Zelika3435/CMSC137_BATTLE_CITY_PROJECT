@@ -453,6 +453,7 @@ public final class GameServer implements AutoCloseable {
             case PING        -> handlePing(datagram.source(), packet);
             case SET_READY   -> handleSetReady(datagram.source(), packet);
             case START_MATCH -> handleStartMatch(datagram.source(), packet);
+            case CHAT        -> handleChat(datagram.source(), packet);
             case DISCONNECT  -> handleDisconnect(datagram.source());
             default          -> {}
         }
@@ -618,6 +619,44 @@ public final class GameServer implements AutoCloseable {
         }
         System.out.println("[Server] Host requested immediate start");
         transitionTo(ServerPhase.RUNNING);
+    }
+
+    // ---- CHAT -------------------------------------------------------------------------------
+
+    private void handleChat(InetSocketAddress address, NetMessages.NetPacket packet) {
+        ClientConnection client = clientsByAddress.get(address);
+        if (client == null) return;
+        
+        // Only allow chat in lobby/countdown phases.
+        if (phase != ServerPhase.LOBBY && phase != ServerPhase.COUNTDOWN) return;
+
+        NetMessages.ChatPayload chat = (NetMessages.ChatPayload) packet.payload();
+        System.out.printf("[Server] Chat from player %d (%s): %s%n",
+                client.playerId, client.name, chat.message());
+
+        NetMessages.ChatBroadcastPayload broadcast = new NetMessages.ChatBroadcastPayload(
+                client.playerId, client.name, chat.message());
+
+        // Broadcast to all connected clients.
+        for (ClientConnection c : clientsByAddress.values()) {
+            PacketHeader header = new PacketHeader(
+                    ProtocolConstants.PROTOCOL_VERSION,
+                    MessageType.CHAT_BROADCAST,
+                    c.sessionId,
+                    c.playerId,
+                    globalSeq++,
+                    c.lastAck,
+                    currentTick()
+            );
+            try {
+                transport.send(
+                        MessageCodec.encode(new NetMessages.NetPacket(header, broadcast)),
+                        c.address
+                );
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
     }
 
     // ---- PING -------------------------------------------------------------------------------

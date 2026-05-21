@@ -21,6 +21,7 @@ import com.battlecity.net.protocol.ProtocolConstants;
 import com.battlecity.net.transport.UdpTransport;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -44,6 +45,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class GameClient implements AutoCloseable {
 
+    public record ChatEntry(int playerId, String name, String message) {}
+
     private final UdpTransport transport;
     private final InetSocketAddress serverAddress;
     private final String playerName;
@@ -63,6 +66,9 @@ public final class GameClient implements AutoCloseable {
 
     /** Latest lobby snapshot received via LOBBY_STATE, or {@code null} before first arrival. */
     private LobbySnapshot lobbySnapshot;
+
+    /** Received chat messages, capped to recent entries for UI display. */
+    private final List<ChatEntry> chatMessages = new ArrayList<>();
 
     /**
      * Most recent user-visible error from the server (e.g. "server full"), or {@code null}.
@@ -188,6 +194,23 @@ public final class GameClient implements AutoCloseable {
     }
 
     /**
+     * Sends a chat message to the lobby.
+     *
+     * <p>No-op if not yet connected.
+     */
+    public void sendChat(String message) {
+        if (!connected || message == null || message.isBlank()) {
+            return;
+        }
+        PacketHeader header = buildHeader(MessageType.CHAT);
+        try {
+            send(new NetMessages.NetPacket(header, new NetMessages.ChatPayload(message)));
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    /**
      * Sends a graceful DISCONNECT to the server and marks this client as disconnected.
      *
      * <p>Must be called before {@link #close()} when leaving the lobby or match intentionally so
@@ -260,6 +283,11 @@ public final class GameClient implements AutoCloseable {
      */
     public String lastError() {
         return lastError;
+    }
+
+    /** Read-only list of recent chat messages. */
+    public List<ChatEntry> chatMessages() {
+        return List.copyOf(chatMessages);
     }
 
     /**
@@ -365,9 +393,18 @@ public final class GameClient implements AutoCloseable {
             case JOIN_ACK    -> handleJoinAck(packet);
             case LOBBY_STATE -> handleLobbyState(packet);
             case SNAPSHOT    -> handleSnapshot(packet);
+            case CHAT_BROADCAST -> handleChatBroadcast(packet);
             case PONG        -> handlePong(packet);
             case ERROR       -> handleError(packet);
             default          -> {}
+        }
+    }
+
+    private void handleChatBroadcast(NetMessages.NetPacket packet) {
+        NetMessages.ChatBroadcastPayload payload = (NetMessages.ChatBroadcastPayload) packet.payload();
+        chatMessages.add(new ChatEntry(payload.senderPlayerId(), payload.senderName(), payload.message()));
+        if (chatMessages.size() > 10) {
+            chatMessages.remove(0); // keep only last 10 messages
         }
     }
 

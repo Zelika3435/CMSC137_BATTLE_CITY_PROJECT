@@ -139,6 +139,18 @@ public final class NetMessages {
      */
     public record StartMatchPayload() {}
 
+    // ---- C→S: chat message ------------------------------------------------------------------
+
+    public record ChatPayload(String message) {}
+
+    // ---- S→C: chat broadcast ----------------------------------------------------------------
+
+    public record ChatBroadcastPayload(
+            int senderPlayerId,
+            String senderName,
+            String message
+    ) {}
+
     // ---- Envelope ---------------------------------------------------------------------------
 
     public record NetPacket(PacketHeader header, Object payload) {}

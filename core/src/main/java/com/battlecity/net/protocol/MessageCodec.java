@@ -32,6 +32,8 @@ public final class MessageCodec {
             case LOBBY_STATE  -> writeLobbyState(buffer, (NetMessages.LobbyStatePayload) packet.payload());
             case SET_READY    -> writeSetReady(buffer, (NetMessages.SetReadyPayload) packet.payload());
             case START_MATCH  -> writeStartMatch(buffer);
+            case CHAT         -> writeChat(buffer, (NetMessages.ChatPayload) packet.payload());
+            case CHAT_BROADCAST -> writeChatBroadcast(buffer, (NetMessages.ChatBroadcastPayload) packet.payload());
         }
         buffer.flip();
         byte[] out = new byte[buffer.remaining()];
@@ -54,6 +56,8 @@ public final class MessageCodec {
             case LOBBY_STATE -> readLobbyState(buffer);
             case SET_READY   -> readSetReady(buffer);
             case START_MATCH -> readStartMatch(buffer);
+            case CHAT        -> readChat(buffer);
+            case CHAT_BROADCAST -> readChatBroadcast(buffer);
         };
         return new NetMessages.NetPacket(header, payload);
     }
@@ -397,5 +401,47 @@ public final class MessageCodec {
     private static NetMessages.StartMatchPayload readStartMatch(ByteBuffer buffer) {
         if (buffer.hasRemaining()) buffer.get(); // consume padding byte
         return new NetMessages.StartMatchPayload();
+    }
+
+    // ---- CHAT -------------------------------------------------------------------------------
+
+    private static void writeChat(ByteBuffer buffer, NetMessages.ChatPayload payload) {
+        byte[] bytes = payload.message().getBytes(StandardCharsets.UTF_8);
+        buffer.putShort((short) bytes.length);
+        buffer.put(bytes);
+    }
+
+    private static NetMessages.ChatPayload readChat(ByteBuffer buffer) {
+        int len = Short.toUnsignedInt(buffer.getShort());
+        byte[] bytes = new byte[len];
+        buffer.get(bytes);
+        return new NetMessages.ChatPayload(new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    // ---- CHAT_BROADCAST ---------------------------------------------------------------------
+
+    private static void writeChatBroadcast(ByteBuffer buffer, NetMessages.ChatBroadcastPayload payload) {
+        buffer.put((byte) payload.senderPlayerId());
+        byte[] nameBytes = payload.senderName().getBytes(StandardCharsets.UTF_8);
+        buffer.put((byte) nameBytes.length);
+        buffer.put(nameBytes);
+        byte[] msgBytes = payload.message().getBytes(StandardCharsets.UTF_8);
+        buffer.putShort((short) msgBytes.length);
+        buffer.put(msgBytes);
+    }
+
+    private static NetMessages.ChatBroadcastPayload readChatBroadcast(ByteBuffer buffer) {
+        int senderId = Byte.toUnsignedInt(buffer.get());
+        int nameLen = Byte.toUnsignedInt(buffer.get());
+        byte[] nameBytes = new byte[nameLen];
+        buffer.get(nameBytes);
+        int msgLen = Short.toUnsignedInt(buffer.getShort());
+        byte[] msgBytes = new byte[msgLen];
+        buffer.get(msgBytes);
+        return new NetMessages.ChatBroadcastPayload(
+                senderId,
+                new String(nameBytes, StandardCharsets.UTF_8),
+                new String(msgBytes, StandardCharsets.UTF_8)
+        );
     }
 }

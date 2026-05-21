@@ -39,7 +39,7 @@ import com.battlecity.net.protocol.NetMessages;
  * Game-world drawing happens exclusively in
  * {@link com.battlecity.core.MpMatchPhaseDriver} and the single-player drivers.
  */
-public final class LobbyScreen implements PhaseHandler {
+public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements PhaseHandler {
 
     private static final int MAX_PLAYERS = 4;
     /** Max chars of a player name shown in the roster before truncating with "..". */
@@ -59,6 +59,7 @@ public final class LobbyScreen implements PhaseHandler {
     private float elapsed;
     private boolean prevEscape;
     private boolean prevR;
+    private boolean prevEnter;
 
     /**
      * Set to {@code true} the moment {@link #update} decides to transition to
@@ -66,6 +67,10 @@ public final class LobbyScreen implements PhaseHandler {
      * the player explicitly leaves (ESC → main menu), not when the match starts.
      */
     private boolean leavingForMatch;
+
+    private boolean chatMode;
+    private final StringBuilder chatBuffer = new StringBuilder();
+    private boolean prevT;
 
     /** Convenience constructor for the JOIN flow (no host-IP hint needed). */
     public LobbyScreen(PhaseContext ctx, GameClient netClient) {
@@ -94,8 +99,13 @@ public final class LobbyScreen implements PhaseHandler {
         boolean escNow = Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
         if (escNow && !prevEscape) {
             prevEscape = true;
-            // DISCONNECT is sent in onExit() which CoreGame calls before closing the socket.
-            return AppPhase.MAIN_MENU;
+            if (chatMode) {
+                chatMode = false;
+                chatBuffer.setLength(0);
+            } else {
+                // DISCONNECT is sent in onExit() which CoreGame calls before closing the socket.
+                return AppPhase.MAIN_MENU;
+            }
         }
         prevEscape = escNow;
 
@@ -116,6 +126,11 @@ public final class LobbyScreen implements PhaseHandler {
 
         if (netClient.isConnected()) {
             handleLobbyKeys();
+            if (chatMode && Gdx.input.getInputProcessor() != this) {
+                Gdx.input.setInputProcessor(this);
+            } else if (!chatMode && Gdx.input.getInputProcessor() == this) {
+                Gdx.input.setInputProcessor(null);
+            }
         }
 
         return AppPhase.MP_LOBBY;
@@ -166,13 +181,20 @@ public final class LobbyScreen implements PhaseHandler {
      */
     @Override
     public void onExit() {
+        if (Gdx.input.getInputProcessor() == this) {
+            Gdx.input.setInputProcessor(null);
+        }
         if (!leavingForMatch) {
             netClient.sendDisconnect("left lobby");
         }
     }
 
     @Override
-    public void dispose() {}
+    public void dispose() {
+        if (Gdx.input.getInputProcessor() == this) {
+            Gdx.input.setInputProcessor(null);
+        }
+    }
 
     // ---- Render helpers ---------------------------------------------------------------------
 
@@ -283,20 +305,52 @@ public final class LobbyScreen implements PhaseHandler {
 
         NetMessages.LobbyPlayerEntry me = snap.playerEntry(netClient.playerId());
         boolean amReady = me != null && me.ready();
-        ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, cy - 82f);
+        
+        float hintsY = cy - 82f;
+        
+        ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, hintsY);
 
         if (netClient.isHost()) {
             if (canForceStartMatch(snap)) {
                 ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-                ctx.font().draw(ctx.batch(), "ENTER/SPACE: start match", cx - 88f, cy - 82f);
+                ctx.font().draw(ctx.batch(), "      ENTER: start match", cx - 88f, cy - 82f);
             } else if (snap.phase() == LobbyPhase.END) {
                 ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
                 ctx.font().draw(ctx.batch(), "Waiting for next lobby...", cx - 88f, cy - 82f);
             }
             if (hostIp != null) {
                 ctx.batch().setColor(0.55f, 0.9f, 0.55f, 1f);
-                ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, cx - 8f, cy - 96f);
+                ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, cx - 8f, hintsY - 14f);
             }
+        }
+
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+
+        // Chat rendering
+        float leftX = cx - 190f;
+        int maxMsgs = 5;
+        java.util.List<GameClient.ChatEntry> msgs = netClient.chatMessages();
+        int numMsgs = Math.min(maxMsgs, msgs.size());
+        int startIdx = msgs.size() - numMsgs;
+
+        float bottomChatY = 40f;
+        for (int i = 0; i < numMsgs; i++) {
+            GameClient.ChatEntry msg = msgs.get(startIdx + i);
+            float msgY = bottomChatY + (numMsgs - 1 - i) * 16f;
+            
+            ctx.batch().setColor(0.6f, 0.85f, 1f, 1f); // Cyan name
+            ctx.font().draw(ctx.batch(), "[" + msg.name() + "]: ", leftX, msgY);
+            ctx.batch().setColor(0.95f, 0.95f, 0.95f, 1f); // Brighter white message
+            ctx.font().draw(ctx.batch(), msg.message(), leftX + 90f, msgY);
+        }
+
+        float inputY = 20f;
+        if (chatMode) {
+            ctx.batch().setColor(0.4f, 1f, 0.4f, 1f); // Bright green indicator
+            ctx.font().draw(ctx.batch(), "> " + chatBuffer.toString() + (elapsed % 1f < 0.5f ? "_" : ""), leftX, inputY);
+        } else {
+            ctx.batch().setColor(1f, 0.85f, 0.1f, 1f); // Yellow attention-grabbing color
+            ctx.font().draw(ctx.batch(), "[Press T to Chat]", leftX, inputY);
         }
 
         ctx.batch().setColor(1f, 1f, 1f, 1f);
@@ -306,6 +360,27 @@ public final class LobbyScreen implements PhaseHandler {
 
     private void handleLobbyKeys() {
         boolean rNow = Gdx.input.isKeyPressed(Input.Keys.R);
+        boolean tNow = Gdx.input.isKeyPressed(Input.Keys.T);
+        boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
+
+        if (chatMode) {
+            if (enterNow && !prevEnter) {
+                if (!chatBuffer.isEmpty()) {
+                    netClient.sendChat(chatBuffer.toString());
+                }
+                chatMode = false;
+                chatBuffer.setLength(0);
+            }
+            prevEnter = enterNow;
+            return;
+        }
+
+        if (tNow && !prevT) {
+            chatMode = true;
+            chatBuffer.setLength(0);
+        }
+        prevT = tNow;
+        prevEnter = enterNow;
 
         if (rNow && !prevR) {
             LobbySnapshot snap = netClient.lobbySnapshot();
@@ -331,5 +406,29 @@ public final class LobbyScreen implements PhaseHandler {
         return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
                 || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)
                 || Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
+    }
+
+    @Override
+    public boolean keyTyped(char character) {
+        if (!chatMode) return false;
+
+        // Handle backspace
+        if (character == '\b' && !chatBuffer.isEmpty()) {
+            chatBuffer.setLength(chatBuffer.length() - 1);
+            return true;
+        }
+
+        // Enter and Escape are handled in handleLobbyKeys/update
+        if (character == '\r' || character == '\n' || character == 27) {
+            return true;
+        }
+
+        // Only append printable ASCII characters
+        if (character >= 32 && character <= 126 && chatBuffer.length() < 128) {
+            chatBuffer.append(character);
+            return true;
+        }
+
+        return false;
     }
 }
