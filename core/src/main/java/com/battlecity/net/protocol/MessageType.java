@@ -14,7 +14,11 @@ public enum MessageType {
     /** C→S: client toggles its ready flag in the lobby. */
     SET_READY(10),
     /** C→S: host requests an immediate match start (skips remaining countdown). */
-    START_MATCH(11);
+    START_MATCH(11),
+    /** C→S: player sends a chat message to the lobby. */
+    CHAT(12),
+    /** S→C: server broadcasts a chat message to all connected clients. */
+    CHAT_BROADCAST(13);
 
     private final int id;
 

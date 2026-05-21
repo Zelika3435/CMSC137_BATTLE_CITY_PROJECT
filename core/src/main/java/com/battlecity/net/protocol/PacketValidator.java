@@ -41,6 +41,8 @@ public final class PacketValidator {
             case SNAPSHOT    -> validateSnapshot((NetMessages.SnapshotPayload) packet.payload());
             case LOBBY_STATE -> validateLobbyState((NetMessages.LobbyStatePayload) packet.payload());
             case SET_READY   -> validateSetReady((NetMessages.SetReadyPayload) packet.payload());
+            case CHAT        -> validateChat((NetMessages.ChatPayload) packet.payload());
+            case CHAT_BROADCAST -> validateChatBroadcast((NetMessages.ChatBroadcastPayload) packet.payload());
             case START_MATCH -> ValidationResult.ok();
             case PING, PONG, DISCONNECT, ERROR -> ValidationResult.ok();
         };
@@ -126,6 +128,26 @@ public final class PacketValidator {
 
     private static ValidationResult validateSetReady(NetMessages.SetReadyPayload payload) {
         // boolean field; no additional constraints beyond successful decode.
+        return ValidationResult.ok();
+    }
+
+    private static ValidationResult validateChat(NetMessages.ChatPayload payload) {
+        if (payload.message() == null || payload.message().isBlank() || payload.message().length() > 128) {
+            return ValidationResult.reject("invalid chat message");
+        }
+        return ValidationResult.ok();
+    }
+
+    private static ValidationResult validateChatBroadcast(NetMessages.ChatBroadcastPayload payload) {
+        if (payload.senderPlayerId() < 0 || payload.senderPlayerId() >= ProtocolConstants.MAX_PLAYERS) {
+            return ValidationResult.reject("invalid sender id in chat broadcast");
+        }
+        if (payload.senderName() == null || payload.senderName().isBlank() || payload.senderName().length() > 32) {
+            return ValidationResult.reject("invalid sender name in chat broadcast");
+        }
+        if (payload.message() == null || payload.message().isBlank() || payload.message().length() > 128) {
+            return ValidationResult.reject("invalid message in chat broadcast");
+        }
         return ValidationResult.ok();
     }
 
