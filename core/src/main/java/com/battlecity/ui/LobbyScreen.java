@@ -27,7 +27,8 @@ import com.battlecity.net.protocol.NetMessages;
  * <ul>
  *   <li>{@code R} — toggle own ready state (edge-triggered; server confirms via next
  *       LOBBY_STATE broadcast).
- *   <li>{@code ENTER} — force-start the match (host only; server validates authority).
+ *   <li>{@code ENTER} / {@code SPACE} / numpad {@code ENTER} — force-start the match (host only,
+ *       while server phase is LOBBY or COUNTDOWN; server validates authority).
  *   <li>{@code ESC} — send {@code DISCONNECT} then return to the main menu.
  * </ul>
  *
@@ -58,7 +59,6 @@ public final class LobbyScreen implements PhaseHandler {
     private float elapsed;
     private boolean prevEscape;
     private boolean prevR;
-    private boolean prevEnter;
 
     /**
      * Set to {@code true} the moment {@link #update} decides to transition to
@@ -286,8 +286,13 @@ public final class LobbyScreen implements PhaseHandler {
         ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, cy - 82f);
 
         if (netClient.isHost()) {
-            ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-            ctx.font().draw(ctx.batch(), "ENTER: start match", cx - 8f, cy - 82f);
+            if (canForceStartMatch(snap)) {
+                ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
+                ctx.font().draw(ctx.batch(), "ENTER/SPACE: start match", cx - 88f, cy - 82f);
+            } else if (snap.phase() == LobbyPhase.END) {
+                ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
+                ctx.font().draw(ctx.batch(), "Waiting for next lobby...", cx - 88f, cy - 82f);
+            }
             if (hostIp != null) {
                 ctx.batch().setColor(0.55f, 0.9f, 0.55f, 1f);
                 ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, cx - 8f, cy - 96f);
@@ -300,8 +305,7 @@ public final class LobbyScreen implements PhaseHandler {
     // ---- Key handling -----------------------------------------------------------------------
 
     private void handleLobbyKeys() {
-        boolean rNow     = Gdx.input.isKeyPressed(Input.Keys.R);
-        boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
+        boolean rNow = Gdx.input.isKeyPressed(Input.Keys.R);
 
         if (rNow && !prevR) {
             LobbySnapshot snap = netClient.lobbySnapshot();
@@ -311,9 +315,21 @@ public final class LobbyScreen implements PhaseHandler {
         }
         prevR = rNow;
 
-        if (enterNow && !prevEnter && netClient.isHost()) {
-            netClient.sendStartMatch();
+        if (startMatchKeyJustPressed()) {
+            LobbySnapshot snap = netClient.lobbySnapshot();
+            if (snap != null && canForceStartMatch(snap) && netClient.isHost()) {
+                netClient.sendStartMatch();
+            }
         }
-        prevEnter = enterNow;
+    }
+
+    private static boolean canForceStartMatch(LobbySnapshot snap) {
+        return snap.phase() == LobbyPhase.LOBBY || snap.phase() == LobbyPhase.COUNTDOWN;
+    }
+
+    private static boolean startMatchKeyJustPressed() {
+        return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+                || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)
+                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
     }
 }

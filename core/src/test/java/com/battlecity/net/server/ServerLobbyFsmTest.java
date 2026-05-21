@@ -139,6 +139,14 @@ final class ServerLobbyFsmTest {
     // ---- Force start (host) -----------------------------------------------------------------
 
     @Test
+    void hostForceStart_withSinglePlayer() {
+        ServerLobby lobby = new ServerLobby();
+        lobby.addPlayer("Solo");
+        assertTrue(lobby.forceStart(0), "host may force-start with one player");
+        assertEquals(ServerPhase.RUNNING, lobby.phase());
+    }
+
+    @Test
     void hostForceStart_fromLobby_skipsCountdown() {
         ServerLobby lobby = new ServerLobby();
         lobby.addPlayer("Host");

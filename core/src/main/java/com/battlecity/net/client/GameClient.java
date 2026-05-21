@@ -362,7 +362,10 @@ public final class GameClient implements AutoCloseable {
         lastError = err.message() != null && !err.message().isEmpty()
                 ? err.message()
                 : "Server error (code " + err.code() + ")";
-        connected = false;
+        // Lobby operational errors (wrong phase, not host) must not drop an active session.
+        if (err.code() != 3 && err.code() != 4) {
+            connected = false;
+        }
     }
 
     // ---- Packet helpers ---------------------------------------------------------------------

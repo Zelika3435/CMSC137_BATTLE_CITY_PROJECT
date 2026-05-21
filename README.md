@@ -132,16 +132,16 @@ Press **ENTER** on the Confirm row (or navigate there) to connect.
 Once connected, the **LobbyScreen** shows:
 
 - Player roster (slot · name · ready badge) sorted by player ID.
-- The player with the **lowest ID** is the **host** and sees the **Start Match** button.
+- The player with the **lowest ID** is the **host** and can **force-start** the match (no need to wait for everyone to ready up).
 - Countdown ticks are taken directly from the server's `LOBBY_STATE` (not wall-clock).
 
 | Action | Key |
 |--------|-----|
 | Toggle ready | **R** |
-| Force-start (host only) | **ENTER** |
+| Force-start (host only, LOBBY or COUNTDOWN) | **ENTER**, **SPACE**, or numpad **ENTER** |
 | Leave lobby | **ESC** — sends `DISCONNECT`, frees server slot, returns to main menu |
 
-**Auto-start:** when all connected players (minimum 2) are ready the server automatically begins the 3-second countdown. Any player disconnecting during the countdown drops the count; if it falls below 2 the countdown cancels and the lobby resets.
+**Auto-start:** when all connected players (minimum 2) are ready the server automatically begins the 3-second countdown. The host can skip the countdown (or start solo) with force-start. Any player disconnecting during the countdown drops the count; if it falls below 2 the countdown cancels and the lobby resets.
 
 #### In-match
 
@@ -186,7 +186,7 @@ The overlay reads only from immutable snapshots and `NetStatsSnapshot` — it ha
 | Connect form | Type | Edit Host / Port / Name fields |
 | Connect form | BACKSPACE | Delete last character |
 | Lobby | R | Toggle ready |
-| Lobby | ENTER | Force-start (host only) |
+| Lobby | ENTER / SPACE / numpad ENTER | Force-start (host only, LOBBY or COUNTDOWN) |
 | In-game | WASD / arrows | Move + face direction |
 | In-game | SPACE | Fire |
 | In-game | F3 | Toggle debug overlay |
