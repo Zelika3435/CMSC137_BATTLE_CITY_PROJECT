@@ -53,7 +53,7 @@ public final class MatchEndScreen implements PhaseHandler {
         ctx.batch().draw(ctx.whitePixel(), 0f, 0f, w, h);
 
         if (finalSnapshot != null) {
-            MatchScreenOverlay.renderDefeat(ctx, finalSnapshot, 0, false);
+            MatchScreenOverlay.renderSinglePlayerEnd(ctx, finalSnapshot, 0);
         } else {
             ctx.batch().setColor(0.9f, 0.9f, 0.9f, 1f);
             ctx.font().draw(ctx.batch(), "MATCH OVER", cx - 44f, cy + 48f);

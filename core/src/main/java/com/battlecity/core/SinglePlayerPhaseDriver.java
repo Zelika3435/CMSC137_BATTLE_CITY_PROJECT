@@ -133,7 +133,7 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
             int ticks = local != null ? local.respawnCooldownTicks() : 0;
             MatchScreenOverlay.renderDeath(ctx, ticks);
         } else if (defeatOverlayActive) {
-            MatchScreenOverlay.renderDefeat(ctx, snap, LOCAL_PLAYER_ID, false);
+            MatchScreenOverlay.renderSinglePlayerEnd(ctx, snap, LOCAL_PLAYER_ID);
         }
     }
 
