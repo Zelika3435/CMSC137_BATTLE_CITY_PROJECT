@@ -3,9 +3,13 @@ package com.battlecity.core;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.battlecity.game.LocalMatchController;
+import com.battlecity.game.TutorialScript;
+import com.battlecity.game.TutorialStepComplete;
 import com.battlecity.game.snapshot.GameSnapshot;
 import com.battlecity.game.snapshot.NetStatsSnapshot;
 import com.battlecity.input.KeyboardInputMapper;
+import com.battlecity.ui.TutorialOverlay;
+import java.util.List;
 
 /**
  * Phase driver for {@link AppPhase#SINGLE_PLAYER} and {@link AppPhase#TUTORIAL}.
@@ -25,20 +29,52 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
     private final AppPhase ownPhase;
     private final LocalMatchController match;
 
+    /**
+     * Non-null only in {@link AppPhase#TUTORIAL} mode. Drives step advancement and
+     * exposes UI events; has no effect on simulation state.
+     */
+    private final TutorialScript tutorialScript;
+
+    /**
+     * Non-null iff {@link #tutorialScript} is non-null. Renders the HUD panel above the
+     * tutorial map; reads from the script every frame without mutating it.
+     */
+    private final TutorialOverlay tutorialOverlay;
+
     private float accumulator;
     private boolean prevEscape;
 
     /**
-     * @param ctx      shared render resources
-     * @param ownPhase {@link AppPhase#SINGLE_PLAYER} or {@link AppPhase#TUTORIAL}
-     * @param match    pre-constructed controller; this driver does not own World or Simulation
+     * Single-player or tutorial driver.
+     *
+     * @param ctx            shared render resources
+     * @param ownPhase       {@link AppPhase#SINGLE_PLAYER} or {@link AppPhase#TUTORIAL}
+     * @param match          pre-constructed controller; this driver does not own World or Simulation
+     * @param tutorialScript optional step machine; {@code null} for non-tutorial modes
      */
-    public SinglePlayerPhaseDriver(PhaseContext ctx, AppPhase ownPhase, LocalMatchController match) {
-        this.ctx = ctx;
-        this.ownPhase = ownPhase;
-        this.match = match;
+    public SinglePlayerPhaseDriver(PhaseContext ctx, AppPhase ownPhase,
+            LocalMatchController match, TutorialScript tutorialScript) {
+        this.ctx             = ctx;
+        this.ownPhase        = ownPhase;
+        this.match           = match;
+        this.tutorialScript  = tutorialScript;
+        this.tutorialOverlay = (tutorialScript != null) ? new TutorialOverlay(ctx) : null;
+        if (tutorialScript != null) {
+            tutorialScript.init(match.snapshot());
+        }
         // Drain edge-detection state so a SPACE/ENTER held in the menu doesn't fire on tick 1.
         ctx.inputMapper().reset();
+    }
+
+    /**
+     * Convenience overload for non-tutorial single-player mode (no step script).
+     *
+     * @param ctx      shared render resources
+     * @param ownPhase {@link AppPhase#SINGLE_PLAYER}
+     * @param match    pre-constructed controller
+     */
+    public SinglePlayerPhaseDriver(PhaseContext ctx, AppPhase ownPhase, LocalMatchController match) {
+        this(ctx, ownPhase, match, null);
     }
 
     // ---- PhaseHandler -----------------------------------------------------------------------
@@ -56,7 +92,10 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         while (accumulator >= FIXED_DT) {
             runTick();
             accumulator -= FIXED_DT;
-            if (match.isMatchOver()) {
+            // Tutorial has no MATCH_END condition: the player exits via ESC.
+            // (matchOver can only be set if the tutorial BASE is somehow hit, which the
+            // steel guard row in createTutorialMap() is designed to prevent.)
+            if (match.isMatchOver() && tutorialScript == null) {
                 accumulator = 0f;
                 return AppPhase.MATCH_END;
             }
@@ -68,6 +107,9 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
     public void render() {
         float alpha = accumulator / FIXED_DT;
         ctx.snapshotRenderer().render(match.previousSnapshot(), match.snapshot(), alpha, 0);
+        if (tutorialOverlay != null) {
+            tutorialOverlay.render(tutorialScript);
+        }
     }
 
     @Override
@@ -91,6 +133,19 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         }
 
         match.tick(input.moveDir(), input.firePressed());
+
+        if (tutorialScript != null) {
+            tutorialScript.evaluate(match.snapshot(), match.lastEvents());
+            // Drain events — consumed here to keep the script queue empty; overlay reads currentStep.
+            List<TutorialStepComplete> advanced = tutorialScript.drainUiEvents();
+            if (!advanced.isEmpty()) {
+                // Log step advancement for debugging; rendering reacts via currentStep() poll.
+                for (TutorialStepComplete ev : advanced) {
+                    System.out.println("[Tutorial] Step complete: " + ev.completed()
+                            + " → " + ev.next());
+                }
+            }
+        }
 
         GameSnapshot snap = match.snapshot();
         ctx.debugOverlay().update(new NetStatsSnapshot(

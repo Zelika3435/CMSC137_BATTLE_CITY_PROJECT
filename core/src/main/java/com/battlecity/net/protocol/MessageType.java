@@ -8,7 +8,13 @@ public enum MessageType {
     PING(5),
     PONG(6),
     DISCONNECT(7),
-    ERROR(8);
+    ERROR(8),
+    /** S→C: lobby roster snapshot (phase, players, host, countdown). */
+    LOBBY_STATE(9),
+    /** C→S: client toggles its ready flag in the lobby. */
+    SET_READY(10),
+    /** C→S: host requests an immediate match start (skips remaining countdown). */
+    START_MATCH(11);
 
     private final int id;
 

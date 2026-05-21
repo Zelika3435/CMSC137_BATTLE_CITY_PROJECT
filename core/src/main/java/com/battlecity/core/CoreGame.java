@@ -11,17 +11,19 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.battlecity.assets.Assets;
 import com.battlecity.game.LocalMatchController;
+import com.battlecity.game.TutorialScript;
 import com.battlecity.game.snapshot.GameSnapshot;
 import com.battlecity.input.KeyboardInputMapper;
 import com.battlecity.net.client.GameClient;
 import com.battlecity.net.protocol.ProtocolConstants;
 import com.battlecity.render.SnapshotRenderer;
-import com.battlecity.ui.ConnectScreen;
 import com.battlecity.ui.DebugOverlay;
 import com.battlecity.ui.LobbyScreen;
 import com.battlecity.ui.MainMenuScreen;
 import com.battlecity.ui.MatchEndScreen;
+import com.battlecity.ui.MultiplayerConnectScreen;
 import com.battlecity.ui.SinglePlayerPreStartScreen;
 import java.io.IOException;
 
@@ -59,6 +61,8 @@ public final class CoreGame extends ApplicationAdapter {
     private SnapshotRenderer snapshotRenderer;
     private DebugOverlay debugOverlay;
     private KeyboardInputMapper inputMapper;
+    private Assets assets;
+    private boolean assetsReady;
 
     private PhaseContext ctx;
 
@@ -74,6 +78,22 @@ public final class CoreGame extends ApplicationAdapter {
     private GameClient pendingNetClient;
 
     /**
+     * Values from the last successful connection attempt (host, port, display name).
+     * Re-used when returning to {@link AppPhase#MP_CONNECT} after a lobby error so the
+     * player does not have to retype the server address.
+     */
+    private String lastConnectHost;
+    private int    lastConnectPort;
+    private String lastConnectName;
+
+    /**
+     * Error message captured from {@link GameClient#lastError()} just before the network client
+     * is closed on a lobby → MP_CONNECT redirect.  Passed as the initial status banner of the
+     * next {@link com.battlecity.ui.MultiplayerConnectScreen} instance, then cleared.
+     */
+    private String pendingConnectError;
+
+    /**
      * Bot seed chosen on the SP_PRESTART panel. Consumed when entering SINGLE_PLAYER to
      * construct the {@link LocalMatchController}. Defaults to the fixed practice seed.
      */
@@ -84,6 +104,8 @@ public final class CoreGame extends ApplicationAdapter {
      * outcome details even after the match driver is torn down.
      */
     private GameSnapshot pendingFinalSnapshot;
+    private boolean startupLogged;
+    private long frameCounter;
 
     // -----------------------------------------------------------------------------------------
 
@@ -99,8 +121,11 @@ public final class CoreGame extends ApplicationAdapter {
 
     @Override
     public void create() {
+        System.out.println("[Battle City] CoreGame.create() start");
         camera = new OrthographicCamera();
         viewport = new FitViewport(WORLD_W, WORLD_H, camera);
+        // Initialize camera/viewport once up front; some platforms may delay the first resize.
+        viewport.update(WORLD_W, WORLD_H, true);
 
         batch = new SpriteBatch();
         font = new BitmapFont();
@@ -118,8 +143,12 @@ public final class CoreGame extends ApplicationAdapter {
         ctx = new PhaseContext(batch, font, whitePixel, viewport,
                 snapshotRenderer, debugOverlay, inputMapper);
 
+        assets = new Assets();
+        assets.loadAll();
+
         // Always start at main menu; no simulation or network is started yet.
         transitionTo(AppPhase.MAIN_MENU);
+        System.out.println("[Battle City] CoreGame.create() complete");
     }
 
     @Override
@@ -129,11 +158,40 @@ public final class CoreGame extends ApplicationAdapter {
 
     @Override
     public void render() {
+        if (!startupLogged) {
+            startupLogged = true;
+            String glVendor = Gdx.gl.glGetString(GL20.GL_VENDOR);
+            String glRenderer = Gdx.gl.glGetString(GL20.GL_RENDERER);
+            String glVersion = Gdx.gl.glGetString(GL20.GL_VERSION);
+            System.out.println("[Battle City] First render tick reached");
+            System.out.println("[Battle City] GL_VENDOR=" + glVendor);
+            System.out.println("[Battle City] GL_RENDERER=" + glRenderer);
+            System.out.println("[Battle City] GL_VERSION=" + glVersion);
+            System.out.println("[Battle City] Framebuffer="
+                    + Gdx.graphics.getBackBufferWidth() + "x" + Gdx.graphics.getBackBufferHeight());
+        }
+
+        frameCounter++;
+        if (frameCounter % 300 == 0) {
+            System.out.println("[Battle City] render heartbeat frame=" + frameCounter
+                    + " fps=" + Gdx.graphics.getFramesPerSecond()
+                    + " phase=" + currentPhase);
+        }
+
         Gdx.gl.glClearColor(0.08f, 0.08f, 0.10f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         viewport.apply();
+        camera.update();
         batch.setProjectionMatrix(camera.combined);
+
+        if (!assetsReady) {
+            assetsReady = assets.update();
+            if (assetsReady) {
+                snapshotRenderer.setAssets(assets);
+                System.out.println("[Battle City] Assets loaded");
+            }
+        }
 
         float dt = Gdx.graphics.getDeltaTime();
         AppPhase next = currentHandler.update(dt);
@@ -152,6 +210,38 @@ public final class CoreGame extends ApplicationAdapter {
                     && currentHandler instanceof SinglePlayerPreStartScreen ps) {
                 pendingSeed = ps.selectedSeed();
             }
+            // When the multiplayer form confirms a JOIN, create the GameClient here so that
+            // CoreGame owns the lifecycle and MultiplayerConnectScreen stays free of net code.
+            if (next == AppPhase.MP_LOBBY
+                    && currentHandler instanceof MultiplayerConnectScreen mcs) {
+                closeNetClient();
+                String host = mcs.selectedHost();
+                int    port = mcs.selectedPort();
+                String name = mcs.selectedDisplayName();
+                try {
+                    pendingNetClient = new GameClient(host, port, name);
+                    pendingNetClient.connect();
+                    // Persist the values so MP_CONNECT can pre-fill them if the join fails.
+                    lastConnectHost = host;
+                    lastConnectPort = port;
+                    lastConnectName = name;
+                } catch (IOException ex) {
+                    Gdx.app.error("CoreGame", "Failed to start network client: " + ex.getMessage());
+                    pendingConnectError = "Cannot connect: " + ex.getMessage();
+                    transitionTo(AppPhase.MP_CONNECT);
+                    return;
+                }
+            }
+
+            // When the lobby redirects back to MP_CONNECT (server rejected the join), capture
+            // the error text before closeNetClient() nulls the client.
+            if (next == AppPhase.MP_CONNECT && pendingNetClient != null) {
+                String lobbyErr = pendingNetClient.lastError();
+                if (lobbyErr != null) {
+                    pendingConnectError = lobbyErr;
+                }
+            }
+
             transitionTo(next);
         }
     }
@@ -163,6 +253,7 @@ public final class CoreGame extends ApplicationAdapter {
             currentHandler.dispose();
         }
         closeNetClient();
+        if (assets != null) assets.dispose();
         if (whitePixel != null) whitePixel.dispose();
         if (font != null) font.dispose();
         if (batch != null) batch.dispose();
@@ -175,6 +266,8 @@ public final class CoreGame extends ApplicationAdapter {
      * Simulation and GameClient instances are created lazily here; {@link #create()} stays clean.
      */
     private void transitionTo(AppPhase next) {
+        final AppPhase previousPhase = currentPhase;
+
         if (currentHandler != null) {
             currentHandler.onExit();
             currentHandler.dispose();
@@ -191,22 +284,30 @@ public final class CoreGame extends ApplicationAdapter {
             case SP_PRESTART -> currentHandler = new SinglePlayerPreStartScreen(ctx);
             case SINGLE_PLAYER -> currentHandler = new SinglePlayerPhaseDriver(
                     ctx, AppPhase.SINGLE_PLAYER, LocalMatchController.withBots(pendingSeed));
-            case TUTORIAL -> currentHandler = new SinglePlayerPhaseDriver(
-                    ctx, AppPhase.TUTORIAL, LocalMatchController.withoutBots());
+            case TUTORIAL -> {
+                LocalMatchController tutorialCtrl = LocalMatchController.forTutorial();
+                currentHandler = new SinglePlayerPhaseDriver(
+                        ctx, AppPhase.TUTORIAL, tutorialCtrl, new TutorialScript());
+            }
             case MP_CONNECT -> {
                 closeNetClient();
-                try {
-                    pendingNetClient = new GameClient(cliHost, cliPort, "Player");
-                    pendingNetClient.connect();
-                } catch (IOException ex) {
-                    Gdx.app.error("CoreGame", "Failed to start network client: " + ex.getMessage());
-                    currentPhase = AppPhase.MAIN_MENU;
-                    currentHandler = new MainMenuScreen(ctx);
-                    return;
-                }
-                currentHandler = new ConnectScreen(ctx, pendingNetClient, cliHost, cliPort);
+                // Pre-fill with the last-attempted values (or CLI defaults on first visit).
+                // pendingConnectError is non-null only when returning from a failed lobby join.
+                String h = lastConnectHost != null ? lastConnectHost : cliHost;
+                int    p = lastConnectPort  > 0    ? lastConnectPort  : cliPort;
+                String n = lastConnectName  != null ? lastConnectName : "Player";
+                currentHandler = new MultiplayerConnectScreen(ctx, h, p, n, pendingConnectError);
+                pendingConnectError = null;
             }
-            case MP_LOBBY -> currentHandler = new LobbyScreen(ctx, pendingNetClient);
+            case MP_LOBBY -> {
+                // After a completed match the player returns here without re-joining.
+                // Reset the client's snapshot state so LobbyScreen does not immediately
+                // re-enter MP_MATCH on the stale currentSnapshot reference.
+                if (previousPhase == AppPhase.MP_MATCH && pendingNetClient != null) {
+                    pendingNetClient.resetForLobby();
+                }
+                currentHandler = new LobbyScreen(ctx, pendingNetClient);
+            }
             case MP_MATCH -> currentHandler = new MpMatchPhaseDriver(ctx, pendingNetClient);
             case MATCH_END -> {
                 // Net client is no longer needed after the match ends.

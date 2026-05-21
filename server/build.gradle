@@ -7,3 +7,7 @@ dependencies {
 application {
     mainClass = "com.battlecity.server.HeadlessServer"
 }
+
+tasks.named("run", JavaExec).configure {
+    standardInput = System.in
+}

@@ -1,5 +1,6 @@
 package com.battlecity.game;
 
+import com.battlecity.game.event.GameEvent;
 import com.battlecity.game.snapshot.GameSnapshot;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,18 @@ public final class LocalMatchController {
      */
     public static LocalMatchController withoutBots() {
         return new LocalMatchController(World.createDefault(), false, 0L);
+    }
+
+    /**
+     * Creates a dedicated tutorial controller using the small tutorial map
+     * ({@link MapFactory#createTutorialMap()}) with only player 0 spawned.
+     *
+     * <p>Combine with {@link TutorialScript} to track step progression.
+     */
+    public static LocalMatchController forTutorial() {
+        World world = new World(MapFactory.createTutorialMap());
+        MapFactory.spawnTutorialTank(world);
+        return new LocalMatchController(world, false, 0L);
     }
 
     /**
@@ -86,5 +99,15 @@ public final class LocalMatchController {
     /** Deterministic state hash at the current tick — useful for desync detection. */
     public long stateHash() {
         return simulation.stateHash();
+    }
+
+    /**
+     * Events produced by the most recently completed {@link #tick}.
+     *
+     * <p>Returned list is immutable. Consumed by {@link TutorialScript#evaluate} to detect
+     * simulation events such as {@link com.battlecity.game.event.TileDestroyed}.
+     */
+    public List<GameEvent> lastEvents() {
+        return simulation.lastAppliedEvents();
     }
 }

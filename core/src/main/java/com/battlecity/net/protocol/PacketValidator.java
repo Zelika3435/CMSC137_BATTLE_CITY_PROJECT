@@ -35,13 +35,18 @@ public final class PacketValidator {
         }
 
         return switch (header.messageType()) {
-            case JOIN -> validateJoin((NetMessages.JoinPayload) packet.payload());
-            case JOIN_ACK -> validateJoinAck((NetMessages.JoinAckPayload) packet.payload());
-            case INPUT -> validateInput((NetMessages.InputPayload) packet.payload());
-            case SNAPSHOT -> validateSnapshot((NetMessages.SnapshotPayload) packet.payload());
+            case JOIN        -> validateJoin((NetMessages.JoinPayload) packet.payload());
+            case JOIN_ACK    -> validateJoinAck((NetMessages.JoinAckPayload) packet.payload());
+            case INPUT       -> validateInput((NetMessages.InputPayload) packet.payload());
+            case SNAPSHOT    -> validateSnapshot((NetMessages.SnapshotPayload) packet.payload());
+            case LOBBY_STATE -> validateLobbyState((NetMessages.LobbyStatePayload) packet.payload());
+            case SET_READY   -> validateSetReady((NetMessages.SetReadyPayload) packet.payload());
+            case START_MATCH -> ValidationResult.ok();
             case PING, PONG, DISCONNECT, ERROR -> ValidationResult.ok();
         };
     }
+
+    // ---- Per-type validators ----------------------------------------------------------------
 
     private static ValidationResult validateJoin(NetMessages.JoinPayload payload) {
         if (payload.playerName() == null || payload.playerName().isBlank()
@@ -51,9 +56,16 @@ public final class PacketValidator {
         return ValidationResult.ok();
     }
 
+    /**
+     * Validates the extended JOIN_ACK including the new {@code currentPhase} field.
+     */
     private static ValidationResult validateJoinAck(NetMessages.JoinAckPayload payload) {
-        if (payload.assignedPlayerId() < 0 || payload.assignedPlayerId() >= ProtocolConstants.MAX_PLAYERS) {
+        if (payload.assignedPlayerId() < 0
+                || payload.assignedPlayerId() >= ProtocolConstants.MAX_PLAYERS) {
             return ValidationResult.reject("invalid assigned player id");
+        }
+        if (payload.currentPhase() == null) {
+            return ValidationResult.reject("null phase in join ack");
         }
         return ValidationResult.ok();
     }
@@ -76,16 +88,48 @@ public final class PacketValidator {
     }
 
     private static ValidationResult validateSnapshot(NetMessages.SnapshotPayload payload) {
-        var snapshot = payload.snapshot();
         int expectedTiles = MapFactory.DEFAULT_WIDTH * MapFactory.DEFAULT_HEIGHT;
-        if (snapshot.tiles().length != expectedTiles) {
+        if (payload.snapshot().tiles().length != expectedTiles) {
             return ValidationResult.reject("invalid tile count");
         }
-        if (snapshot.tanks().size() > ProtocolConstants.MAX_PLAYERS) {
+        if (payload.snapshot().tanks().size() > ProtocolConstants.MAX_PLAYERS) {
             return ValidationResult.reject("too many tanks");
         }
         return ValidationResult.ok();
     }
+
+    private static ValidationResult validateLobbyState(NetMessages.LobbyStatePayload payload) {
+        if (payload.phase() == null) {
+            return ValidationResult.reject("null phase in lobby state");
+        }
+        if (payload.hostPlayerId() < 0
+                || payload.hostPlayerId() >= ProtocolConstants.MAX_PLAYERS) {
+            return ValidationResult.reject("invalid hostPlayerId");
+        }
+        if (payload.countdownTicksLeft() < 0) {
+            return ValidationResult.reject("negative countdownTicksLeft");
+        }
+        if (payload.players() == null
+                || payload.players().size() > ProtocolConstants.MAX_PLAYERS) {
+            return ValidationResult.reject("invalid player list size");
+        }
+        for (NetMessages.LobbyPlayerEntry p : payload.players()) {
+            if (p.playerId() < 0 || p.playerId() >= ProtocolConstants.MAX_PLAYERS) {
+                return ValidationResult.reject("invalid playerId in lobby state");
+            }
+            if (p.name() == null || p.name().length() > 32) {
+                return ValidationResult.reject("invalid player name in lobby state");
+            }
+        }
+        return ValidationResult.ok();
+    }
+
+    private static ValidationResult validateSetReady(NetMessages.SetReadyPayload payload) {
+        // boolean field; no additional constraints beyond successful decode.
+        return ValidationResult.ok();
+    }
+
+    // ---- Result record ----------------------------------------------------------------------
 
     public record ValidationResult(boolean valid, String reason) {
         public static ValidationResult ok() {

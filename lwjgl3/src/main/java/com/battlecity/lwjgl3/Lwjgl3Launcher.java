@@ -11,26 +11,49 @@ public final class Lwjgl3Launcher {
     private Lwjgl3Launcher() {}
 
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            System.err.println("[Battle City] Uncaught exception on thread " + thread.getName());
+            throwable.printStackTrace(System.err);
+        });
+
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Battle City");
-        config.setWindowedMode(26 * 16, 26 * 16);
-        config.useVsync(true);
+        config.setWindowedMode(26 * 48, 26 * 48);
 
         if (isWsl()) {
-            // WSL often has no usable ALSA/PipeWire device; skip audio to avoid startup noise/errors.
             config.disableAudio(true);
-            System.out.println("[Battle City] WSL detected: audio disabled.");
+            config.useVsync(false);
+            config.setForegroundFPS(60);
+            System.out.println("[Battle City] WSL detected: audio disabled, vsync off.");
             String display = System.getenv("DISPLAY");
             if (display == null || display.isBlank()) {
                 System.err.println("[Battle City] WARNING: DISPLAY is not set. "
                         + "Use WSLg (Windows 11) or: export DISPLAY=:0");
             }
+            String gallium = System.getenv("GALLIUM_DRIVER");
             if ("1".equals(System.getenv("LIBGL_ALWAYS_SOFTWARE"))) {
                 System.out.println("[Battle City] Software OpenGL enabled (LIBGL_ALWAYS_SOFTWARE=1).");
+            } else if ("d3d12".equals(gallium)) {
+                System.out.println("[Battle City] WSLg GPU (GALLIUM_DRIVER=d3d12).");
+            } else if (gallium != null && !gallium.isBlank()) {
+                System.out.println("[Battle City] Gallium driver: " + gallium + ".");
             }
+            System.out.println("[Battle City] DISPLAY=" + String.valueOf(System.getenv("DISPLAY")));
+            System.out.println("[Battle City] WAYLAND_DISPLAY="
+                    + String.valueOf(System.getenv("WAYLAND_DISPLAY")));
+            System.out.println("[Battle City] GLFW_PLATFORM="
+                    + String.valueOf(System.getenv("GLFW_PLATFORM")));
+        } else {
+            config.useVsync(true);
         }
 
-        new Lwjgl3Application(new CoreGame(args), config);
+        try {
+            new Lwjgl3Application(new CoreGame(args), config);
+        } catch (Throwable throwable) {
+            System.err.println("[Battle City] Failed to start LWJGL application");
+            throwable.printStackTrace(System.err);
+            throw throwable;
+        }
     }
 
     static boolean isWsl() {

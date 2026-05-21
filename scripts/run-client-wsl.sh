@@ -9,7 +9,9 @@ PORT="${2:-9000}"
 export DISPLAY="${DISPLAY:-:0}"
 # Required for WSLg GPU passthrough (Windows 11).
 export LD_LIBRARY_PATH="/usr/lib/wsl/lib:${LD_LIBRARY_PATH:-}"
+export GALLIUM_DRIVER=d3d12
+export GLFW_PLATFORM=x11
 unset LIBGL_ALWAYS_SOFTWARE
-unset GALLIUM_DRIVER
+unset WAYLAND_DISPLAY
 
 ./gradlew :lwjgl3:run --args="$HOST $PORT"

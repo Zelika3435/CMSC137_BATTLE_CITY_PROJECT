@@ -11,18 +11,22 @@ final class ClientConnection {
     final InetSocketAddress address;
     final int playerId;
     final int sessionId;
+    final String name;
     int lastSeq = -1;
     int lastAck = 0;
     long lastPingMs;
     int packetsSent;
     int packetsAcked;
+    /** Lobby ready-state; toggled by SET_READY messages. */
+    boolean ready = false;
     private final Set<String> appliedKeys = new HashSet<>();
     private final List<QueuedCommand> pendingInputs = new ArrayList<>();
 
-    ClientConnection(InetSocketAddress address, int playerId, int sessionId) {
+    ClientConnection(InetSocketAddress address, int playerId, int sessionId, String name) {
         this.address = address;
         this.playerId = playerId;
         this.sessionId = sessionId;
+        this.name = name;
         this.lastPingMs = System.currentTimeMillis();
     }
 

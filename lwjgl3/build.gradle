@@ -31,6 +31,18 @@ application {
     mainClass = "com.battlecity.lwjgl3.Lwjgl3Launcher"
 }
 
+def isWsl() {
+    if (System.getenv("WSL_DISTRO_NAME") != null || System.getenv("WSL_INTEROP") != null) {
+        return true
+    }
+    def versionFile = file("/proc/version")
+    if (!versionFile.exists()) {
+        return false
+    }
+    def version = versionFile.text.toLowerCase()
+    return version.contains("microsoft") || version.contains("wsl")
+}
+
 def configureLinuxDisplay(JavaExec exec) {
     if (!OperatingSystem.current().isLinux()) {
         return
@@ -40,25 +52,56 @@ def configureLinuxDisplay(JavaExec exec) {
     }
 }
 
-def configureWslGraphics(JavaExec exec) {
+def configureWslGpuGraphics(JavaExec exec) {
+    configureLinuxDisplay(exec)
+    def wslLib = "/usr/lib/wsl/lib"
+    if (file(wslLib).exists()) {
+        def existing = System.getenv("LD_LIBRARY_PATH") ?: ""
+        exec.environment "LD_LIBRARY_PATH", existing ? "$wslLib:$existing" : wslLib
+    }
+    // WSLg: force D3D12 instead of ZINK/llvmpipe (avoids libEGL / MESA startup failures).
+    exec.environment "GALLIUM_DRIVER", "d3d12"
+    // Skip DRI device probing; go straight to d3d12 (suppresses "failed to get driver name for fd -1").
+    exec.environment "MESA_LOADER_DRIVER_OVERRIDE", "d3d12"
+    // Suppress non-fatal EGL warnings from Mesa loader (device enumeration noise under WSLg).
+    exec.environment "EGL_LOG_LEVEL", "fatal"
+    // WSLg exposes Wayland but EGL/DRI is unreliable; X11 + D3D12 is the stable path.
+    exec.environment "GLFW_PLATFORM", "x11"
+    exec.doFirst {
+        environment.remove("LIBGL_ALWAYS_SOFTWARE")
+        // Prefer X11 over WSLg Wayland (EGL/DRI path is slow and often fails).
+        environment.remove("WAYLAND_DISPLAY")
+    }
+}
+
+def configureWslSoftwareGraphics(JavaExec exec) {
     configureLinuxDisplay(exec)
     exec.environment "LIBGL_ALWAYS_SOFTWARE", "1"
     exec.environment "GALLIUM_DRIVER", "llvmpipe"
+    exec.environment "MESA_GL_VERSION_OVERRIDE", "3.3"
+    exec.environment "GLFW_PLATFORM", "x11"
+    exec.doFirst {
+        environment.remove("WAYLAND_DISPLAY")
+    }
 }
 
-// Standard run (native Linux GPU when available; WSLg on Windows 11)
+// Standard run (native Linux GPU when available; WSLg D3D12 + no-vsync under WSL)
 tasks.named("run", JavaExec).configure {
     jvmArgs = []
     if (OperatingSystem.current().isMacOsX()) {
         jvmArgs("-XstartOnFirstThread")
     }
-    configureLinuxDisplay(it)
+    if (OperatingSystem.current().isLinux() && isWsl()) {
+        configureWslGpuGraphics(it)
+    } else {
+        configureLinuxDisplay(it)
+    }
 }
 
-// Recommended for WSL when you see MESA/EGL errors or a blank window
-tasks.register("runWsl", JavaExec) {
+// Try WSLg hardware-accelerated GPU (D3D12) — use if software rendering is too slow
+tasks.register("runWslGpu", JavaExec) {
     group = "application"
-    description = "Run client on WSL with software OpenGL (use if :lwjgl3:run has graphics errors)"
+    description = "Run client on WSL with hardware GPU (D3D12) — use if software rendering is too slow"
     dependsOn classes
     classpath = sourceSets.main.runtimeClasspath
     mainClass.set(application.mainClass.get())
@@ -74,5 +117,5 @@ tasks.register("runWsl", JavaExec) {
         args "127.0.0.1", "9000"
     }
 
-    configureWslGraphics(it)
+    configureWslGpuGraphics(it)
 }

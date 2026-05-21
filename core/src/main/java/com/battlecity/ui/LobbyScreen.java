@@ -6,27 +6,59 @@ import com.battlecity.core.AppPhase;
 import com.battlecity.core.PhaseContext;
 import com.battlecity.core.PhaseHandler;
 import com.battlecity.net.client.GameClient;
+import com.battlecity.net.client.LobbySnapshot;
+import com.battlecity.net.protocol.LobbyPhase;
+import com.battlecity.net.protocol.NetMessages;
 
 /**
  * Phase driver for {@link AppPhase#MP_LOBBY}.
  *
- * <p>Variable-dt. The client is connected (JOIN_ACK received) but no match snapshot has arrived
- * yet. This screen polls the client and waits for the first {@link GameClient#currentSnapshot()}
- * to become non-null, which signals that the server has started the match. ESC returns to
- * {@link AppPhase#MAIN_MENU}.
+ * <p>Covers three sub-states without a phase change:
+ * <ol>
+ *   <li><b>Connecting</b> — not yet received JOIN_ACK; retries every second via
+ *       {@link GameClient#endTick()}.
+ *   <li><b>Lobby</b> — shows player roster, ready flags, and host/countdown controls while
+ *       polling {@link LobbySnapshot} updates from the server.
+ *   <li><b>Countdown</b> — same roster view; countdown seconds derived purely from
+ *       {@link LobbySnapshot#countdownTicksLeft()} (server tick), no wall-clock interpolation.
+ * </ol>
+ *
+ * <p>Controls (available once connected):
+ * <ul>
+ *   <li>{@code R} — toggle own ready state (edge-triggered; server confirms via next
+ *       LOBBY_STATE broadcast).
+ *   <li>{@code ENTER} — force-start the match (host only; server validates authority).
+ *   <li>{@code ESC} — send {@code DISCONNECT} then return to the main menu.
+ * </ul>
+ *
+ * <p>Transitions to {@link AppPhase#MP_MATCH} automatically when the first authoritative
+ * {@link com.battlecity.game.snapshot.GameSnapshot} arrives (server entered RUNNING phase).
+ *
+ * <p><b>No GameSnapshot is ever drawn here.</b> All rendering is lobby UI text only.
+ * Game-world drawing happens exclusively in
+ * {@link com.battlecity.core.MpMatchPhaseDriver} and the single-player drivers.
  */
 public final class LobbyScreen implements PhaseHandler {
+
+    private static final int MAX_PLAYERS = 4;
+    /** Max chars of a player name shown in the roster before truncating with "..". */
+    private static final int NAME_DISPLAY_LIMIT = 12;
 
     private final PhaseContext ctx;
     private final GameClient netClient;
 
+    /** Accumulated wall time — used only for the "connecting…" dot animation, not countdown. */
     private float elapsed;
     private boolean prevEscape;
+    private boolean prevR;
+    private boolean prevEnter;
 
     public LobbyScreen(PhaseContext ctx, GameClient netClient) {
         this.ctx = ctx;
         this.netClient = netClient;
     }
+
+    // ---- PhaseHandler -----------------------------------------------------------------------
 
     @Override
     public AppPhase update(float dt) {
@@ -35,6 +67,7 @@ public final class LobbyScreen implements PhaseHandler {
         boolean escNow = Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
         if (escNow && !prevEscape) {
             prevEscape = true;
+            // DISCONNECT is sent in onExit() which CoreGame calls before closing the socket.
             return AppPhase.MAIN_MENU;
         }
         prevEscape = escNow;
@@ -42,38 +75,210 @@ public final class LobbyScreen implements PhaseHandler {
         netClient.poll();
         netClient.endTick();
 
+        // First SNAPSHOT → server entered RUNNING; hand off to the match driver.
         if (netClient.currentSnapshot() != null) {
             return AppPhase.MP_MATCH;
         }
+
+        // Server rejected the join (server full, match in progress, etc.).  Return to the
+        // connect form so the player can correct host/port or wait.  CoreGame will capture
+        // lastError() before closing the client and pass it as a pre-filled status message.
+        if (!netClient.isConnected() && netClient.lastError() != null) {
+            return AppPhase.MP_CONNECT;
+        }
+
+        if (netClient.isConnected()) {
+            handleLobbyKeys();
+        }
+
         return AppPhase.MP_LOBBY;
     }
 
+    /**
+     * Renders lobby UI only — no game-world geometry, no {@link com.battlecity.game.snapshot.GameSnapshot}.
+     * State is read exclusively from {@link GameClient#lobbySnapshot()} and related accessors.
+     */
     @Override
     public void render() {
-        int dots = (int) (elapsed * 1.5f) % 4;
-        String anim = ".".repeat(dots);
+        final float cx = ctx.viewport().getWorldWidth() / 2f;
+        final float cy = ctx.viewport().getWorldHeight() / 2f;
 
-        float cx = ctx.viewport().getWorldWidth() / 2f;
-        float cy = ctx.viewport().getWorldHeight() / 2f;
-
+        // Title
         ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-        ctx.font().draw(ctx.batch(), "BATTLE CITY", cx - 52f, cy + 64f);
-
+        ctx.font().draw(ctx.batch(), "BATTLE CITY", cx - 52f, cy + 96f);
         ctx.batch().setColor(1f, 1f, 1f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "Waiting for match to start" + anim,
-                cx - 112f, cy + 12f);
+
+        if (!netClient.isConnected()) {
+            renderConnecting(cx, cy);
+        } else {
+            LobbySnapshot snap = netClient.lobbySnapshot();
+            if (snap == null) {
+                renderWaitingForLobby(cx, cy);
+            } else {
+                renderLobby(snap, cx, cy);
+            }
+
+            String err = netClient.lastError();
+            if (err != null) {
+                ctx.batch().setColor(1f, 0.35f, 0.35f, 1f);
+                ctx.font().draw(ctx.batch(), "Error: " + err, cx - 140f, cy - 104f);
+                ctx.batch().setColor(1f, 1f, 1f, 1f);
+            }
+        }
 
         ctx.batch().setColor(0.55f, 0.55f, 0.55f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "Player ID: " + netClient.playerId(),
-                cx - 52f, cy - 18f);
-        ctx.font().draw(ctx.batch(), "Press ESC to cancel", cx - 72f, cy - 48f);
+        ctx.font().draw(ctx.batch(), "ESC: back to menu", cx - 68f, cy - 128f);
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
+    /**
+     * Sends a graceful {@code DISCONNECT} to the server before the socket is closed by
+     * {@code CoreGame}. This frees the player slot immediately so other clients can join.
+     */
+    @Override
+    public void onExit() {
+        netClient.sendDisconnect("left lobby");
     }
 
     @Override
-    public void onExit() {}
-
-    @Override
     public void dispose() {}
+
+    // ---- Render helpers ---------------------------------------------------------------------
+
+    private void renderConnecting(float cx, float cy) {
+        String anim = ".".repeat((int) (elapsed * 1.5f) % 4);
+        ctx.font().draw(ctx.batch(), "Connecting to server" + anim, cx - 88f, cy + 60f);
+    }
+
+    private void renderWaitingForLobby(float cx, float cy) {
+        String anim = ".".repeat((int) (elapsed * 1.5f) % 4);
+        ctx.font().draw(ctx.batch(), "Joining lobby" + anim, cx - 56f, cy + 60f);
+        ctx.batch().setColor(0.55f, 0.55f, 0.55f, 1f);
+        ctx.font().draw(ctx.batch(), "Player ID: " + netClient.playerId(), cx - 52f, cy + 36f);
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
+    private void renderLobby(LobbySnapshot snap, float cx, float cy) {
+        renderPhaseHeader(snap, cx, cy);
+        renderRoster(snap, cx, cy);
+        renderHints(snap, cx, cy);
+    }
+
+    /**
+     * Draws the phase / countdown header line.
+     *
+     * <p>The countdown value is read directly from {@link LobbySnapshot#countdownTicksLeft()}
+     * (server-authoritative tick counter divided by 60 Hz). No wall-clock interpolation is used.
+     */
+    private void renderPhaseHeader(LobbySnapshot snap, float cx, float cy) {
+        String header;
+        switch (snap.phase()) {
+            case COUNTDOWN -> {
+                // Server-tick countdown — countdownTicksLeft / 60 Hz = seconds remaining.
+                header = String.format("--- COUNTDOWN  %.1fs ---", snap.countdownSecondsLeft());
+                ctx.batch().setColor(1f, 0.75f, 0.2f, 1f);
+            }
+            case END -> {
+                // Server finished the match and is about to return to lobby.
+                header = "--- MATCH ENDED — waiting for lobby ---";
+                ctx.batch().setColor(0.8f, 0.5f, 0.2f, 1f);
+            }
+            default -> {
+                header = "--- LOBBY (" + snap.players().size() + "/" + MAX_PLAYERS + ") ---";
+                ctx.batch().setColor(0.7f, 0.9f, 1f, 1f);
+            }
+        }
+        ctx.font().draw(ctx.batch(), header, cx - 148f, cy + 68f);
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
+    /**
+     * Draws one row per player using three independent draw calls so each column can carry its
+     * own colour without the last-set-colour problem of a single concatenated string.
+     *
+     * <pre>
+     *  Column A (cx-140):  ready badge [READY] / [NOT RDY]  — green / red
+     *  Column B (cx-56):   slot + display name               — cyan (local), white (others)
+     *  Column C (cx+108):  [HOST] label                      — yellow, only for the host
+     * </pre>
+     */
+    private void renderRoster(LobbySnapshot snap, float cx, float cy) {
+        int row = 0;
+        for (NetMessages.LobbyPlayerEntry p : snap.players()) {
+            float rowY = cy + 40f - row * 24f;
+            renderPlayerRow(p, snap, cx, rowY);
+            row++;
+        }
+    }
+
+    private void renderPlayerRow(NetMessages.LobbyPlayerEntry p, LobbySnapshot snap,
+                                  float cx, float rowY) {
+        boolean ready  = p.ready();
+        boolean isHost = p.playerId() == snap.hostPlayerId();
+        boolean isMe   = p.playerId() == netClient.playerId();
+
+        // Column A — ready badge
+        if (ready) {
+            ctx.batch().setColor(0.2f, 0.9f, 0.3f, 1f);
+            ctx.font().draw(ctx.batch(), "[READY]  ", cx - 140f, rowY);
+        } else {
+            ctx.batch().setColor(0.9f, 0.4f, 0.4f, 1f);
+            ctx.font().draw(ctx.batch(), "[NOT RDY]", cx - 140f, rowY);
+        }
+
+        // Column B — slot + name (cyan for local player, white for others)
+        if (isMe) {
+            ctx.batch().setColor(0.6f, 0.85f, 1f, 1f);
+        } else {
+            ctx.batch().setColor(1f, 1f, 1f, 1f);
+        }
+        String name = p.name();
+        String display = name.length() > NAME_DISPLAY_LIMIT
+                ? name.substring(0, NAME_DISPLAY_LIMIT) + ".."
+                : name;
+        ctx.font().draw(ctx.batch(), "[" + p.playerId() + "] " + display, cx - 56f, rowY);
+
+        // Column C — HOST badge (independent yellow; does not bleed onto the name)
+        if (isHost) {
+            ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
+            ctx.font().draw(ctx.batch(), "[HOST]", cx + 108f, rowY);
+        }
+
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
+    private void renderHints(LobbySnapshot snap, float cx, float cy) {
+        ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
+
+        NetMessages.LobbyPlayerEntry me = snap.playerEntry(netClient.playerId());
+        boolean amReady = me != null && me.ready();
+        ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, cy - 82f);
+
+        if (netClient.isHost()) {
+            ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
+            ctx.font().draw(ctx.batch(), "ENTER: start match", cx - 8f, cy - 82f);
+        }
+
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
+    // ---- Key handling -----------------------------------------------------------------------
+
+    private void handleLobbyKeys() {
+        boolean rNow     = Gdx.input.isKeyPressed(Input.Keys.R);
+        boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
+
+        if (rNow && !prevR) {
+            LobbySnapshot snap = netClient.lobbySnapshot();
+            NetMessages.LobbyPlayerEntry me = snap == null ? null
+                    : snap.playerEntry(netClient.playerId());
+            netClient.sendSetReady(me == null || !me.ready());
+        }
+        prevR = rNow;
+
+        if (enterNow && !prevEnter && netClient.isHost()) {
+            netClient.sendStartMatch();
+        }
+        prevEnter = enterNow;
+    }
 }
