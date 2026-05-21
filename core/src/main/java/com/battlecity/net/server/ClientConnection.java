@@ -13,7 +13,7 @@ final class ClientConnection {
     final int playerId;
     final int sessionId;
     final String name;
-    int lastSeq = -1;
+    int lastSeq = 0;
     int lastAck = 0;
     long lastPingMs;
     int packetsSent;

@@ -266,6 +266,9 @@ public final class GameServer implements AutoCloseable {
                 nextSnapshotIsFullMap = true;
                 System.out.printf("[Server] Match started — tick=0  players=%d%n",
                         clientsByAddress.size());
+                // Push an immediate tick-0 snapshot so clients can leave the lobby without
+                // waiting for the next server tick (and without relying on LOBBY_STATE).
+                broadcastSnapshot();
             }
             case END -> {
                 endTicks = END_PHASE_TICKS;

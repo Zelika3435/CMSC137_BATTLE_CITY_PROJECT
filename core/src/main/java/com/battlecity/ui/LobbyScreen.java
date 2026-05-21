@@ -109,6 +109,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         }
         prevEscape = escNow;
 
+        netClient.poll();
         netClient.endTick();
 
         // First SNAPSHOT → server entered RUNNING; hand off to the match driver.
@@ -142,7 +143,6 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
      */
     @Override
     public void render() {
-        netClient.poll();
         final float cx = ctx.viewport().getWorldWidth() / 2f;
         final float cy = ctx.viewport().getWorldHeight() / 2f;
 
@@ -311,9 +311,12 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         ctx.font().draw(ctx.batch(), amReady ? "R: unready" : "R: ready", cx - 140f, hintsY);
 
         if (netClient.isHost()) {
-            if (canForceStartMatch(snap)) {
+            if (snap.phase() == LobbyPhase.LOBBY && canForceStartMatch(snap)) {
                 ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
                 ctx.font().draw(ctx.batch(), "      ENTER: start match", cx - 88f, cy - 82f);
+            } else if (snap.phase() == LobbyPhase.COUNTDOWN) {
+                ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
+                ctx.font().draw(ctx.batch(), "      Match starting...", cx - 88f, cy - 82f);
             } else if (snap.phase() == LobbyPhase.END) {
                 ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
                 ctx.font().draw(ctx.batch(), "Waiting for next lobby...", cx - 88f, cy - 82f);
