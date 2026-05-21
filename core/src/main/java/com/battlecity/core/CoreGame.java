@@ -387,7 +387,8 @@ public final class CoreGame extends ApplicationAdapter {
                 }
                 currentHandler = new LobbyScreen(ctx, pendingNetClient, pendingHostIp);
             }
-            case MP_MATCH -> currentHandler = new MpMatchPhaseDriver(ctx, pendingNetClient);
+            case MP_MATCH -> currentHandler = new MpMatchPhaseDriver(
+                    ctx, pendingNetClient, hostedServer != null);
             case MATCH_END -> {
                 // Net client is no longer needed after the match ends.
                 closeMultiplayerResources();
@@ -421,6 +422,7 @@ public final class CoreGame extends ApplicationAdapter {
      */
     private void closeMultiplayerResources() {
         if (pendingNetClient != null) {
+            pendingNetClient.sendDisconnect("session ended");
             pendingNetClient.close();
             pendingNetClient = null;
         }

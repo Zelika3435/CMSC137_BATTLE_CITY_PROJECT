@@ -24,6 +24,7 @@ public final class MainMenuScreen implements PhaseHandler {
     private static final float QUIT_EXTRA_GAP = 14f;
 
     private final PhaseContext ctx;
+    private final PhaseInputGate inputGate = new PhaseInputGate();
     private int selected;
     private boolean prevUp;
     private boolean prevDown;
@@ -35,10 +36,19 @@ public final class MainMenuScreen implements PhaseHandler {
 
     @Override
     public AppPhase update(float dt) {
+        inputGate.tick(dt);
+
         boolean upNow = Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP);
         boolean downNow = Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN);
         boolean selectNow = Gdx.input.isKeyPressed(Input.Keys.ENTER)
                 || Gdx.input.isKeyPressed(Input.Keys.SPACE);
+
+        if (inputGate.isBlocking()) {
+            prevUp = upNow;
+            prevDown = downNow;
+            prevSelect = selectNow;
+            return AppPhase.MAIN_MENU;
+        }
 
         if (upNow && !prevUp) {
             selected = (selected - 1 + ITEMS.length) % ITEMS.length;

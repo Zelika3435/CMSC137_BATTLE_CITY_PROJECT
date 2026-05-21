@@ -71,6 +71,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
     private boolean chatMode;
     private final StringBuilder chatBuffer = new StringBuilder();
     private boolean prevT;
+    private final PhaseInputGate inputGate = new PhaseInputGate();
 
     /** Convenience constructor for the JOIN flow (no host-IP hint needed). */
     public LobbyScreen(PhaseContext ctx, GameClient netClient) {
@@ -95,6 +96,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
     @Override
     public AppPhase update(float dt) {
         elapsed += dt;
+        inputGate.tick(dt);
 
         boolean escNow = Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
         if (escNow && !prevEscape) {
@@ -399,7 +401,7 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         }
         prevR = rNow;
 
-        if (startMatchKeyJustPressed()) {
+        if (!inputGate.isBlocking() && startMatchKeyJustPressed()) {
             LobbySnapshot snap = netClient.lobbySnapshot();
             if (snap != null && canForceStartMatch(snap) && netClient.isHost()) {
                 netClient.sendStartMatch();
@@ -411,10 +413,8 @@ public final class LobbyScreen extends com.badlogic.gdx.InputAdapter implements 
         return snap.phase() == LobbyPhase.LOBBY || snap.phase() == LobbyPhase.COUNTDOWN;
     }
 
-    private static boolean startMatchKeyJustPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
-                || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
+    private boolean startMatchKeyJustPressed() {
+        return inputGate.confirmJustPressed();
     }
 
     @Override

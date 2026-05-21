@@ -10,5 +10,8 @@ public record TankSnapshot(
         float prevX,
         float prevY,
         Direction dir,
-        boolean alive
+        boolean alive,
+        /** Ticks until respawn; {@code 0} means respawn this tick; {@code -1} if not waiting. */
+        int respawnCooldownTicks,
+        boolean eliminated
 ) {}

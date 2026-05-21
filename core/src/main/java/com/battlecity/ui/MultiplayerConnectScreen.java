@@ -63,6 +63,7 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
     // ---- State -------------------------------------------------------------------------------
 
     private final PhaseContext ctx;
+    private final PhaseInputGate inputGate = new PhaseInputGate();
 
     /** Detected LAN IP, cached once at construction; never null. */
     private final String detectedIp;
@@ -153,6 +154,7 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
 
     @Override
     public AppPhase update(float dt) {
+        inputGate.tick(dt);
         if (statusTimer > 0f) statusTimer -= dt;
 
         // W/S navigate only when not typing into a text field (arrow keys always navigate).
@@ -195,8 +197,9 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
         }
 
         // ENTER: advance to the next field, or confirm on the last row.
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
-                || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER)) {
+        if (!inputGate.isBlocking()
+                && (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+                || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER))) {
             if (focused == FIELD_CONFIRM) {
                 return handleConfirm();
             }

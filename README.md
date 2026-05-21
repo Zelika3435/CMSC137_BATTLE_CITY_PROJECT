@@ -55,7 +55,8 @@ MATCH_END               MP_MATCH (live game)
 3. Press **ENTER** to start the match.
 4. You control player 0 (highlighted white); players 1–3 are driven by `BotAI` using the same deterministic seed.
 5. The match ends when the **BASE** is destroyed or all enemy tanks are eliminated.
-6. Press **ENTER** on the result screen to return to the main menu.
+6. When your tank is destroyed (base still intact), a **grey respawn overlay** shows a **2 s** countdown before you respawn at your spawn.
+7. When you lose (base destroyed or eliminated), a **grey defeat overlay** appears — press **ENTER** or **ESC** to quit to the main menu.
 
 **Map:** 26×26 tile arena — STEEL border, steel L-shaped corner bases protecting each spawn, symmetric brick corridor walls and steel pillars creating lanes and chokepoints, central BASE at (12,12)–(13,12) equidistant from all four spawns.
 
@@ -143,11 +144,16 @@ Once connected, the **LobbyScreen** shows:
 
 **Auto-start:** when all connected players (minimum 2) are ready the server automatically begins the 3-second countdown. The host can skip the countdown (or start solo) with force-start. Any player disconnecting during the countdown drops the count; if it falls below 2 the countdown cancels and the lobby resets.
 
+**Host leaves:** if the host disconnects (lobby or match), remaining joiners receive `ERROR` code **5** (“Host left — party disbanded”) and return to the connect screen.
+
 #### In-match
 
 - A **"GO!"** overlay fades out over ~1.5 s when the first server snapshot arrives.
 - **WASD / arrow keys** — move / face; **SPACE** — fire.
 - The client only sends input commands; the server is authoritative for all positions, collisions, and tile destruction.
+- **Tank destroyed:** grey overlay + **respawn countdown** (~2 s) while your base still exists; movement and fire are blocked.
+- **Defeat** (base destroyed / eliminated): grey **YOU LOSE** overlay — **ENTER** or **ESC** quits to the main menu (joiner leaves the party; host ends the session for everyone).
+- **Victory** (match over, you survived): brief “match over” panel, then auto-return to lobby (or **ENTER** to skip).
 
 #### Why the host feels faster (loopback vs LAN)
 

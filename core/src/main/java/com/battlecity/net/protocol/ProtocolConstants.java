@@ -1,7 +1,7 @@
 package com.battlecity.net.protocol;
 
 public final class ProtocolConstants {
-    public static final byte PROTOCOL_VERSION = 1;
+    public static final byte PROTOCOL_VERSION = 2;
     public static final int DEFAULT_PORT = 9000;
     public static final int MAX_PLAYERS = 4;
     public static final int MAX_PACKET_BYTES = 4096;

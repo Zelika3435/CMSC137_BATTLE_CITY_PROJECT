@@ -532,9 +532,14 @@ public final class GameServer implements AutoCloseable {
      * {@value #MIN_PLAYERS_TO_START}, the countdown is cancelled and the server returns to
      * {@link ServerPhase#LOBBY} so remaining players can re-ready.
      */
+    /** ERROR code broadcast when the host leaves — all remaining clients should disconnect. */
+    private static final int HOST_LEFT_ERROR_CODE = 5;
+
     private void handleDisconnect(InetSocketAddress address) {
         ClientConnection client = clientsByAddress.remove(address);
         if (client == null) return;
+
+        final boolean wasHost = client.playerId == currentHostPlayerId();
 
         clientsByPlayerId.remove(client.playerId);
         availableSlots.add(client.playerId);
@@ -543,6 +548,12 @@ public final class GameServer implements AutoCloseable {
                 client.playerId, client.name,
                 clientsByAddress.size(), ProtocolConstants.MAX_PLAYERS,
                 currentHostPlayerId());
+
+        if (wasHost && !clientsByAddress.isEmpty()) {
+            for (InetSocketAddress remaining : new ArrayList<>(clientsByAddress.keySet())) {
+                sendError(remaining, HOST_LEFT_ERROR_CODE, "Host left — party disbanded");
+            }
+        }
 
         if (phase == ServerPhase.LOBBY || phase == ServerPhase.COUNTDOWN) {
             if (phase == ServerPhase.COUNTDOWN

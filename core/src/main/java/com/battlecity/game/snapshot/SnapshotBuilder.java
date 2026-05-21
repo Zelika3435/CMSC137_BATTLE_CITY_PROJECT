@@ -36,7 +36,9 @@ public final class SnapshotBuilder {
                     tank.prevX,
                     tank.prevY,
                     tank.dir,
-                    tank.alive
+                    tank.alive,
+                    tank.respawnCooldownTicks,
+                    tank.eliminated
             ));
         }
         tankSnapshots.sort(Comparator.comparingInt(TankSnapshot::entityId));
@@ -92,6 +94,8 @@ public final class SnapshotBuilder {
             tank.prevY = tankSnapshot.prevY();
             tank.dir = tankSnapshot.dir();
             tank.alive = tankSnapshot.alive();
+            tank.respawnCooldownTicks = tankSnapshot.respawnCooldownTicks();
+            tank.eliminated = tankSnapshot.eliminated();
         }
 
         for (Projectile projectile : world.projectiles) {

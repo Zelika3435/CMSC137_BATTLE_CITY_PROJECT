@@ -200,6 +200,8 @@ public final class MessageCodec {
             buffer.putFloat(tank.prevY());
             buffer.put((byte) tank.dir().ordinal());
             buffer.put((byte) (tank.alive() ? 1 : 0));
+            buffer.putShort((short) tank.respawnCooldownTicks());
+            buffer.put((byte) (tank.eliminated() ? 1 : 0));
         }
 
         buffer.put((byte) snapshot.projectiles().size());
@@ -252,6 +254,8 @@ public final class MessageCodec {
                     buffer.getFloat(),
                     buffer.getFloat(),
                     Direction.fromOrdinal(Byte.toUnsignedInt(buffer.get())),
+                    buffer.get() != 0,
+                    buffer.getShort(),
                     buffer.get() != 0
             ));
         }

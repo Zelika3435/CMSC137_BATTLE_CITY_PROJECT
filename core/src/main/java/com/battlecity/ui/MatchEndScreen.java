@@ -17,6 +17,7 @@ public final class MatchEndScreen implements PhaseHandler {
 
     private final PhaseContext ctx;
     private final GameSnapshot finalSnapshot;
+    private final PhaseInputGate inputGate = new PhaseInputGate();
 
     private boolean prevConfirm;
 
@@ -27,10 +28,13 @@ public final class MatchEndScreen implements PhaseHandler {
 
     @Override
     public AppPhase update(float dt) {
+        inputGate.tick(dt);
+
         boolean confirmNow = Gdx.input.isKeyPressed(Input.Keys.ENTER)
+                || Gdx.input.isKeyPressed(Input.Keys.NUMPAD_ENTER)
                 || Gdx.input.isKeyPressed(Input.Keys.SPACE)
                 || Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
-        if (confirmNow && !prevConfirm) {
+        if (!inputGate.isBlocking() && confirmNow && !prevConfirm) {
             prevConfirm = true;
             return AppPhase.MAIN_MENU;
         }
@@ -40,14 +44,20 @@ public final class MatchEndScreen implements PhaseHandler {
 
     @Override
     public void render() {
-        float cx = ctx.viewport().getWorldWidth() / 2f;
-        float cy = ctx.viewport().getWorldHeight() / 2f;
+        float w = ctx.viewport().getWorldWidth();
+        float h = ctx.viewport().getWorldHeight();
+        float cx = w / 2f;
+        float cy = h / 2f;
 
-        boolean baseDestroyed = finalSnapshot != null && finalSnapshot.baseDestroyed();
-        String headline = baseDestroyed ? "BASE DESTROYED" : "MATCH OVER";
+        ctx.batch().setColor(0.10f, 0.10f, 0.12f, 0.85f);
+        ctx.batch().draw(ctx.whitePixel(), 0f, 0f, w, h);
 
-        ctx.batch().setColor(1f, 0.25f, 0.25f, 1f);
-        ctx.font().draw(ctx.batch(), headline, cx - 68f, cy + 48f);
+        if (finalSnapshot != null) {
+            MatchScreenOverlay.renderDefeat(ctx, finalSnapshot, 0, false);
+        } else {
+            ctx.batch().setColor(0.9f, 0.9f, 0.9f, 1f);
+            ctx.font().draw(ctx.batch(), "MATCH OVER", cx - 44f, cy + 48f);
+        }
 
         ctx.batch().setColor(1f, 1f, 1f, 1f);
         if (finalSnapshot != null) {
@@ -55,17 +65,12 @@ public final class MatchEndScreen implements PhaseHandler {
             long seconds = ticks / 60L;
             ctx.font().draw(ctx.batch(),
                     "Duration: " + seconds + "s  (tick " + ticks + ")",
-                    cx - 104f, cy + 14f);
+                    cx - 104f, cy - 52f);
             int aliveTanks = (int) finalSnapshot.tanks().stream().filter(t -> t.alive()).count();
             ctx.font().draw(ctx.batch(),
                     "Tanks remaining: " + aliveTanks,
-                    cx - 76f, cy - 10f);
+                    cx - 76f, cy - 76f);
         }
-
-        ctx.batch().setColor(0.5f, 0.5f, 0.5f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "Press ENTER / SPACE / ESC to return to menu",
-                cx - 152f, cy - 44f);
     }
 
     @Override

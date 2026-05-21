@@ -37,6 +37,8 @@ public final class StateHasher {
             hash = mix(hash, Float.floatToIntBits(tank.y));
             hash = mix(hash, tank.dir.ordinal());
             hash = mix(hash, tank.alive ? 1 : 0);
+            hash = mix(hash, tank.respawnCooldownTicks);
+            hash = mix(hash, tank.eliminated ? 1 : 0);
         }
 
         List<Projectile> projectiles = new ArrayList<>();
@@ -77,6 +79,8 @@ public final class StateHasher {
             hash = mix(hash, Float.floatToIntBits(tank.y()));
             hash = mix(hash, tank.dir().ordinal());
             hash = mix(hash, tank.alive() ? 1 : 0);
+            hash = mix(hash, tank.respawnCooldownTicks());
+            hash = mix(hash, tank.eliminated() ? 1 : 0);
         }
 
         List<ProjectileSnapshot> projectiles = snapshot.projectiles().stream()

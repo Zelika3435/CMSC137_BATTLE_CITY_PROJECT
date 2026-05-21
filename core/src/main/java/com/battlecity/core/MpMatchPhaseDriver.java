@@ -7,6 +7,8 @@ import com.battlecity.game.snapshot.TankSnapshot;
 import com.battlecity.input.KeyboardInputMapper;
 import com.battlecity.net.client.GameClient;
 import com.battlecity.net.client.SnapshotInterpolationBuffer;
+import com.battlecity.ui.MatchScreenOverlay;
+import com.battlecity.ui.PhaseInputGate;
 
 /**
  * Phase driver for {@link AppPhase#MP_MATCH}.
@@ -16,87 +18,95 @@ import com.battlecity.net.client.SnapshotInterpolationBuffer;
  * tick boundaries. Rendering is driven by server-authoritative snapshots; no local simulation
  * runs in {@link #render()}.
  *
- * <h3>Match lifecycle</h3>
- * <ol>
- *   <li>On entry, a "GO!" overlay fades out over {@link #GO_DURATION} s.
- *   <li>Normal play: inputs sent; render uses a delayed snapshot buffer (prev→cur + alpha).
- *   <li>When {@code snapshot.matchOver()} is detected, {@link #endOverlayTimer} is armed and
- *       the tick loop stops.  An end panel is shown over the last game frame.
- *   <li>After {@link #END_OVERLAY_DURATION} s or an {@code ENTER} keypress the driver returns
- *       {@link AppPhase#MP_LOBBY}.  {@code CoreGame} will call
- *       {@link GameClient#resetForLobby()} before constructing the new {@link com.battlecity.ui.LobbyScreen}.
- *   <li>ESC always returns {@link AppPhase#MAIN_MENU}.
- * </ol>
+ * <p>Local death shows a grey respawn countdown overlay. Defeat (eliminated / base lost) shows a
+ * grey loss screen until the player quits — joiners leave the lobby; hosts disband the party.
  */
 public final class MpMatchPhaseDriver implements PhaseHandler {
 
     private static final float FIXED_DT           = GameClient.SimulationConstants.FIXED_DT;
     private static final float MAX_FRAME_TIME      = 0.25f;
-    /** Duration of the "GO!" flash overlay at match start. */
     private static final float GO_DURATION         = 1.5f;
-    /** How long the match-end overlay stays before auto-returning to lobby. */
     private static final float END_OVERLAY_DURATION = 5f;
 
     private final PhaseContext ctx;
     private final GameClient netClient;
+    private final boolean hostSession;
+
+    private final PhaseInputGate inputGate = new PhaseInputGate();
 
     private float accumulator;
     private boolean prevEscape;
-    private boolean prevEnter;
 
-    /** Counts down from {@link #GO_DURATION} to 0; negative means the flash is done. */
     private float goTimer = GO_DURATION;
 
     /**
-     * -1 while the match is active.  Set to {@link #END_OVERLAY_DURATION} the moment
-     * {@code snapshot.matchOver()} is first detected; counts down to 0 then triggers lobby
-     * return.
+     * Counts down after a non-defeat match end (e.g. local victory) before returning to lobby.
      */
     private float endOverlayTimer = -1f;
 
-    public MpMatchPhaseDriver(PhaseContext ctx, GameClient netClient) {
+    /** Local player must confirm quit after a loss. */
+    private boolean defeatOverlayActive;
+
+    /** Set when returning to lobby after a win so {@link #onExit()} keeps the connection. */
+    private boolean leavingForLobby;
+
+    public MpMatchPhaseDriver(PhaseContext ctx, GameClient netClient, boolean hostSession) {
         this.ctx = ctx;
         this.netClient = netClient;
+        this.hostSession = hostSession;
         ctx.inputMapper().reset();
     }
 
     @Override
     public AppPhase update(float dt) {
+        inputGate.tick(dt);
+        netClient.poll();
+
         if (goTimer > 0f) {
             goTimer -= dt;
         }
 
-        // ESC always quits to main menu, even during the end overlay.
+        String err = netClient.lastError();
+        if (err != null && !netClient.isConnected()) {
+            return AppPhase.MAIN_MENU;
+        }
+
         boolean escNow = Gdx.input.isKeyPressed(Input.Keys.ESCAPE);
         if (escNow && !prevEscape) {
             prevEscape = true;
-            return AppPhase.MAIN_MENU;
+            return quitPhase();
         }
         prevEscape = escNow;
 
-        // ---- End overlay mode ---------------------------------------------------------------
+        if (defeatOverlayActive) {
+            if (inputGate.confirmJustPressed()) {
+                return quitPhase();
+            }
+            netClient.endTick();
+            return AppPhase.MP_MATCH;
+        }
+
         if (endOverlayTimer >= 0f) {
             endOverlayTimer -= dt;
             netClient.endTick();
-
-            boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
-            boolean skip = (enterNow && !prevEnter) || endOverlayTimer <= 0f;
-            prevEnter = enterNow;
-            if (skip) {
+            if (inputGate.confirmJustPressed() || endOverlayTimer <= 0f) {
+                leavingForLobby = true;
                 return AppPhase.MP_LOBBY;
             }
             return AppPhase.MP_MATCH;
         }
 
-        // ---- Normal match mode --------------------------------------------------------------
         accumulator += Math.min(dt, MAX_FRAME_TIME);
         while (accumulator >= FIXED_DT) {
             runTick();
             accumulator -= FIXED_DT;
             GameSnapshot snap = netClient.currentSnapshot();
             if (snap != null && snap.matchOver()) {
-                // Arm the end overlay; stop the tick loop.
-                endOverlayTimer = END_OVERLAY_DURATION;
+                if (MatchScreenOverlay.localPlayerLost(snap, netClient.playerId())) {
+                    defeatOverlayActive = true;
+                } else {
+                    endOverlayTimer = END_OVERLAY_DURATION;
+                }
                 accumulator = 0f;
                 return AppPhase.MP_MATCH;
             }
@@ -106,7 +116,6 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
 
     @Override
     public void render() {
-        netClient.poll();
         ctx.debugOverlay().update(netClient.netStats());
 
         GameSnapshot snap = netClient.currentSnapshot();
@@ -119,12 +128,12 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
         SnapshotInterpolationBuffer.InterpolationSample interp = netClient.interpolationSample();
         GameSnapshot renderPrev = interp != null ? interp.prev() : snap;
         GameSnapshot renderCur  = interp != null ? interp.cur() : snap;
-        float alpha = endOverlayTimer >= 0f ? 0f : (interp != null ? interp.alpha() : 0f);
+        float alpha = (defeatOverlayActive || endOverlayTimer >= 0f) ? 0f
+                : (interp != null ? interp.alpha() : 0f);
         ctx.snapshotRenderer().render(
                 renderPrev, renderCur, alpha,
                 netClient.playerId(), netClient.predictedLocalTank());
 
-        // "GO!" flash — purely visual; fades linearly.
         if (goTimer > 0f) {
             final float cx = ctx.viewport().getWorldWidth()  / 2f;
             final float cy = ctx.viewport().getWorldHeight() / 2f;
@@ -133,50 +142,49 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
             ctx.batch().setColor(1f, 1f, 1f, 1f);
         }
 
-        // Match-end overlay panel.
-        if (endOverlayTimer >= 0f) {
-            renderEndOverlay(snap);
+        int playerId = netClient.playerId();
+        MatchScreenOverlay.LocalStatus status = MatchScreenOverlay.localStatus(snap, playerId);
+        if (status == MatchScreenOverlay.LocalStatus.WAITING_RESPAWN) {
+            TankSnapshot local = tankForPlayer(snap, playerId);
+            int ticks = local != null ? local.respawnCooldownTicks() : 0;
+            MatchScreenOverlay.renderDeath(ctx, ticks);
+        } else if (defeatOverlayActive) {
+            MatchScreenOverlay.renderDefeat(ctx, snap, playerId, hostSession);
+        } else if (endOverlayTimer >= 0f) {
+            renderVictoryOverlay(snap);
         }
     }
 
     @Override
-    public void onExit() {}
+    public void onExit() {
+        if (leavingForLobby) {
+            return;
+        }
+        netClient.sendDisconnect("left match");
+    }
 
     @Override
     public void dispose() {}
 
-    /** Exposes the latest received snapshot so {@code CoreGame} can capture it for MATCH_END. */
     public GameSnapshot currentSnapshot() {
         return netClient.currentSnapshot();
     }
 
-    // ---- End overlay ------------------------------------------------------------------------
+    private AppPhase quitPhase() {
+        netClient.sendDisconnect("quit match");
+        return AppPhase.MAIN_MENU;
+    }
 
-    private void renderEndOverlay(GameSnapshot snap) {
+    private void renderVictoryOverlay(GameSnapshot snap) {
         final float cx = ctx.viewport().getWorldWidth()  / 2f;
         final float cy = ctx.viewport().getWorldHeight() / 2f;
 
-        // Semi-transparent dark panel background.
-        ctx.batch().setColor(0f, 0f, 0f, 0.70f);
+        ctx.batch().setColor(0f, 0f, 0f, 0.55f);
         ctx.batch().draw(ctx.whitePixel(), cx - 156f, cy - 72f, 312f, 148f);
 
-        // Result header.
-        if (snap.baseDestroyed()) {
-            ctx.batch().setColor(1f, 0.3f, 0.3f, 1f);
-            ctx.font().draw(ctx.batch(), "BASE DESTROYED — GAME OVER", cx - 116f, cy + 58f);
-        } else {
-            ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
-            ctx.font().draw(ctx.batch(), "MATCH OVER", cx - 44f, cy + 58f);
-        }
+        ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
+        ctx.font().draw(ctx.batch(), "MATCH OVER", cx - 44f, cy + 58f);
 
-        // Survivor count.
-        int aliveTanks = countAliveTanks(snap);
-        ctx.batch().setColor(1f, 1f, 1f, 1f);
-        ctx.font().draw(ctx.batch(),
-                "Tanks alive: " + aliveTanks + " / " + snap.tanks().size(),
-                cx - 72f, cy + 30f);
-
-        // Countdown / hint row.
         ctx.batch().setColor(0.7f, 0.7f, 0.7f, 1f);
         if (endOverlayTimer > 0f) {
             ctx.font().draw(ctx.batch(),
@@ -190,26 +198,22 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
         ctx.batch().setColor(1f, 1f, 1f, 1f);
     }
 
-    private static int countAliveTanks(GameSnapshot snap) {
-        int n = 0;
-        for (TankSnapshot t : snap.tanks()) {
-            if (t.alive()) n++;
-        }
-        return n;
-    }
-
-    // ---- Tick helpers -----------------------------------------------------------------------
-
     private void runTick() {
-        KeyboardInputMapper.LocalInput input = pollInput();
+        GameSnapshot snap = netClient.currentSnapshot();
+        boolean blockInput = snap != null
+                && MatchScreenOverlay.localStatus(snap, netClient.playerId())
+                        != MatchScreenOverlay.LocalStatus.PLAYING;
+
+        KeyboardInputMapper.LocalInput input = blockInput ? blockedInput() : pollInput();
 
         if (input.debugToggle()) {
             ctx.debugOverlay().toggle();
         }
 
-        netClient.sendInput(input.moveDir(), input.firePressed());
-        // Step the local prediction forward with the same input sent to the server.
-        netClient.stepPrediction(input.moveDir());
+        if (!blockInput) {
+            netClient.sendInput(input.moveDir(), input.firePressed());
+            netClient.stepPrediction(input.moveDir());
+        }
         netClient.endTick();
         ctx.debugOverlay().update(netClient.netStats());
     }
@@ -222,5 +226,18 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
                 Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN),
                 Gdx.input.isKeyPressed(Input.Keys.SPACE),
                 Gdx.input.isKeyPressed(Input.Keys.F3));
+    }
+
+    private static KeyboardInputMapper.LocalInput blockedInput() {
+        return new KeyboardInputMapper.LocalInput(null, false, false);
+    }
+
+    private static TankSnapshot tankForPlayer(GameSnapshot snap, int playerId) {
+        for (TankSnapshot tank : snap.tanks()) {
+            if (tank.playerId() == playerId) {
+                return tank;
+            }
+        }
+        return null;
     }
 }

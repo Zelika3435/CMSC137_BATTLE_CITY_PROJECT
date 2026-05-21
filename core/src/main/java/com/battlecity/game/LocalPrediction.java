@@ -154,7 +154,9 @@ public final class LocalPrediction {
                 tank.prevX,
                 tank.prevY,
                 tank.dir,
-                tank.alive
+                tank.alive,
+                -1,
+                false
         );
     }
 

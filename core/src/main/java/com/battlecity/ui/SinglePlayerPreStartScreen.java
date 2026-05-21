@@ -33,6 +33,7 @@ public final class SinglePlayerPreStartScreen implements PhaseHandler {
     };
 
     private final PhaseContext ctx;
+    private final PhaseInputGate inputGate = new PhaseInputGate();
 
     private int selected;
     private boolean prevUp;
@@ -53,6 +54,8 @@ public final class SinglePlayerPreStartScreen implements PhaseHandler {
 
     @Override
     public AppPhase update(float dt) {
+        inputGate.tick(dt);
+
         boolean upNow = Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP);
         boolean downNow = Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN);
         boolean selectNow = Gdx.input.isKeyPressed(Input.Keys.ENTER)
@@ -70,6 +73,13 @@ public final class SinglePlayerPreStartScreen implements PhaseHandler {
             return AppPhase.MAIN_MENU;
         }
         prevEscape = escNow;
+
+        if (inputGate.isBlocking()) {
+            prevUp = upNow;
+            prevDown = downNow;
+            prevSelect = selectNow;
+            return AppPhase.SP_PRESTART;
+        }
 
         if (selectNow && !prevSelect) {
             prevUp = upNow;

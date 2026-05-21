@@ -40,7 +40,7 @@ final class PredictionReconcileTest {
     // ---- helper constructors ---------------------------------------------------------------
 
     private static TankSnapshot snapshot(float x, float y, Direction dir, boolean alive) {
-        return new TankSnapshot(ENTITY_ID, PLAYER_ID, x, y, x, y, dir, alive);
+        return new TankSnapshot(ENTITY_ID, PLAYER_ID, x, y, x, y, dir, alive, -1, false);
     }
 
     private static LocalPrediction newPrediction(TileMap map,
@@ -108,7 +108,7 @@ final class PredictionReconcileTest {
 
         // Server says the tank died at a different position.
         TankSnapshot server = new TankSnapshot(ENTITY_ID, PLAYER_ID,
-                80f, 90f, 80f, 90f, Direction.DOWN, false);
+                80f, 90f, 80f, 90f, Direction.DOWN, false, -1, false);
 
         pred.reconcile(server);
 
