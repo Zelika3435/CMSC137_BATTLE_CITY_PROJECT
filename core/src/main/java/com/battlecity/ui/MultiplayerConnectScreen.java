@@ -6,6 +6,7 @@ import com.badlogic.gdx.InputAdapter;
 import com.battlecity.core.AppPhase;
 import com.battlecity.core.PhaseContext;
 import com.battlecity.core.PhaseHandler;
+import com.battlecity.net.LocalAddress;
 import com.battlecity.net.protocol.ProtocolConstants;
 
 /**
@@ -27,8 +28,17 @@ import com.battlecity.net.protocol.ProtocolConstants;
  *   <li>ESC — returns to {@link AppPhase#MAIN_MENU}.
  * </ul>
  *
- * <p>HOST mode is not available from the UI; the screen shows a hint to use the CLI server
- * ({@code ./gradlew :server:run}) and does not transition.
+ * <p><b>HOST mode</b> — when the player selects HOST:
+ * <ul>
+ *   <li>The Host field is replaced by a read-only <em>"Your IP: &lt;address&gt;"</em> label
+ *       showing the LAN address detected once at construction via
+ *       {@link com.battlecity.net.LocalAddress#detect()} (cached in {@link #selectedIp()}).
+ *   <li>Only the <b>Port</b> and <b>Name</b> fields need to be filled in.
+ *   <li>Confirming transitions to {@link AppPhase#MP_LOBBY}; {@code CoreGame} then starts an
+ *       in-process {@link com.battlecity.net.server.GameServer} on the chosen port and connects
+ *       a {@link com.battlecity.net.client.GameClient} to {@code 127.0.0.1} at the same port.
+ *       No server or socket is created here — this screen stays network-free.
+ * </ul>
  */
 public final class MultiplayerConnectScreen implements PhaseHandler {
 
@@ -53,6 +63,9 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
     // ---- State -------------------------------------------------------------------------------
 
     private final PhaseContext ctx;
+
+    /** Detected LAN IP, cached once at construction; never null. */
+    private final String detectedIp;
 
     private Mode mode = Mode.JOIN;
     private final StringBuilder hostBuf;
@@ -126,6 +139,7 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
     public MultiplayerConnectScreen(PhaseContext ctx, String defaultHost, int defaultPort,
                                     String defaultName, String initialError) {
         this.ctx = ctx;
+        this.detectedIp = LocalAddress.detect();
         this.hostBuf = new StringBuilder(defaultHost);
         this.portBuf = new StringBuilder(String.valueOf(defaultPort));
         this.nameBuf = new StringBuilder(defaultName != null ? defaultName : "Player");
@@ -147,10 +161,16 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
         if (Gdx.input.isKeyJustPressed(Input.Keys.UP)
                 || (!textFocused && Gdx.input.isKeyJustPressed(Input.Keys.W))) {
             focused = (focused - 1 + NUM_FIELDS) % NUM_FIELDS;
+            if (mode == Mode.HOST && focused == FIELD_HOST) {
+                focused = (focused - 1 + NUM_FIELDS) % NUM_FIELDS;
+            }
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)
                 || (!textFocused && Gdx.input.isKeyJustPressed(Input.Keys.S))) {
             focused = (focused + 1) % NUM_FIELDS;
+            if (mode == Mode.HOST && focused == FIELD_HOST) {
+                focused = (focused + 1) % NUM_FIELDS;
+            }
         }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -168,6 +188,11 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
                 mode = Mode.HOST;
             }
         }
+        // If the player just switched to HOST while focus was on the (now read-only) Host row,
+        // advance to Port so the cursor is never stuck on a non-interactive field.
+        if (mode == Mode.HOST && focused == FIELD_HOST) {
+            focused = FIELD_PORT;
+        }
 
         // ENTER: advance to the next field, or confirm on the last row.
         if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
@@ -176,6 +201,9 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
                 return handleConfirm();
             }
             focused = (focused + 1) % NUM_FIELDS;
+            if (mode == Mode.HOST && focused == FIELD_HOST) {
+                focused = (focused + 1) % NUM_FIELDS;
+            }
         }
 
         return AppPhase.MP_CONNECT;
@@ -202,9 +230,14 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
         renderRow(FIELD_MODE, cx - 120f, startY - FIELD_MODE * lineH,
                 "Mode:  [" + joinMark + "JOIN]    [" + hostMark + "HOST]");
 
-        // Text-field rows with inline cursor
-        renderRow(FIELD_HOST, cx - 120f, startY - FIELD_HOST * lineH,
-                "Host:  " + hostBuf + (focused == FIELD_HOST ? "_" : ""));
+        // Host row: editable when joining, read-only IP label when hosting.
+        if (mode == Mode.HOST) {
+            renderRow(FIELD_HOST, cx - 120f, startY - FIELD_HOST * lineH,
+                    "Your IP: " + detectedIp);
+        } else {
+            renderRow(FIELD_HOST, cx - 120f, startY - FIELD_HOST * lineH,
+                    "Host:  " + hostBuf + (focused == FIELD_HOST ? "_" : ""));
+        }
 
         renderRow(FIELD_PORT, cx - 120f, startY - FIELD_PORT * lineH,
                 "Port:  " + portBuf + (focused == FIELD_PORT ? "_" : ""));
@@ -213,9 +246,7 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
                 "Name:  " + nameBuf + (focused == FIELD_NAME ? "_" : ""));
 
         // Confirm row
-        final String confirmLabel = mode == Mode.HOST
-                ? "[ HOST: run  ./gradlew :server:run  instead ]"
-                : "[ CONNECT ]";
+        final String confirmLabel = mode == Mode.HOST ? "[ HOST GAME ]" : "[ CONNECT ]";
         renderRow(FIELD_CONFIRM, cx - 120f, startY - FIELD_CONFIRM * lineH, confirmLabel);
 
         // Status / error banner
@@ -243,6 +274,13 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
     /** The connection mode the player chose. */
     public Mode selectedMode() { return mode; }
 
+    /**
+     * The detected LAN IP address of this machine, cached at construction time.
+     * Intended for CoreGame to surface "share this IP" information to the player;
+     * not used for the socket connection.
+     */
+    public String selectedIp() { return detectedIp; }
+
     /** Trimmed server hostname or IP address. */
     public String selectedHost() { return hostBuf.toString().trim(); }
 
@@ -268,11 +306,7 @@ public final class MultiplayerConnectScreen implements PhaseHandler {
     // ---- Private helpers --------------------------------------------------------------------
 
     private AppPhase handleConfirm() {
-        if (mode == Mode.HOST) {
-            showStatus("HOST: start the server separately via  ./gradlew :server:run");
-            return AppPhase.MP_CONNECT;
-        }
-        if (selectedHost().isEmpty()) {
+        if (mode == Mode.JOIN && selectedHost().isEmpty()) {
             showStatus("Host address cannot be empty");
             focused = FIELD_HOST;
             return AppPhase.MP_CONNECT;

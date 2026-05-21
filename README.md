@@ -86,17 +86,22 @@ MATCH_END               MP_MATCH (live game)
 
 ### Multiplayer — step by step
 
-#### Hosting
+#### Hosting (in-process — no separate server needed)
 
-```bash
-# Terminal 1 — start the authoritative server (headless, no display needed)
-./gradlew :server:run
-# Custom port:
-./gradlew :server:run --args="9000"
-```
+1. Run a desktop client: `./gradlew :lwjgl3:run`
+2. From the main menu choose **Multiplayer**.
+3. On the **Mode** row press **RIGHT / D** to switch to **HOST**.
+   - The Host field is replaced by **"Your IP: &lt;address&gt;"** — your detected LAN IP.
+   - Fill in a **Port** (default `9000`) and a **Name**, then press **ENTER** on `[ HOST GAME ]`.
+4. An in-process `GameServer` starts on that port and the client connects to it over loopback.
+5. The **LobbyScreen** shows **"Share IP: &lt;address&gt;"** — give that address to other players
+   so they can join via the JOIN flow below.
 
-The server prints its port and waits for connections.  It goes through:
-`LOBBY → COUNTDOWN (3 s) → RUNNING → END (5 s) → LOBBY → …`
+The server goes through: `LOBBY → COUNTDOWN (3 s) → RUNNING → END (5 s) → LOBBY → …`
+
+> **Headless / dedicated server** — if you prefer a standalone server process (e.g. on a remote
+> machine or CI), the old `./gradlew :server:run` entry-point is still available.
+> Custom port: `./gradlew :server:run --args="9000"`
 
 #### Joining (up to 4 players)
 
@@ -105,12 +110,12 @@ The server prints its port and waits for connections.  It goes through:
 ./gradlew :lwjgl3:run
 ```
 
-In the **MP_CONNECT** form:
+In the **MP_CONNECT** form (Mode = **JOIN**):
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| Host  | `127.0.0.1` | IP or hostname of the server |
-| Port  | `9000` (from `ProtocolConstants`) | Must match `--args` above |
+| Host  | detected LAN IP | IP shown in the host's LobbyScreen ("Share IP: …") — pre-filled with your own LAN address; edit to match the host's IP |
+| Port  | `9000` (from `ProtocolConstants`) | Must match the host's chosen port |
 | Name  | `Player` | Display name shown in lobby (max 32 chars) |
 | Mode  | `JOIN` | LEFT/RIGHT (or A/D) on the Mode row to toggle JOIN ↔ HOST |
 

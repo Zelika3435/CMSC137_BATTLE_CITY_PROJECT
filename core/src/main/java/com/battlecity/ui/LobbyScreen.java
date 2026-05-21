@@ -47,15 +47,42 @@ public final class LobbyScreen implements PhaseHandler {
     private final PhaseContext ctx;
     private final GameClient netClient;
 
+    /**
+     * LAN IP to display as a "Share IP" hint when this client is the host.
+     * Null in the JOIN flow — the hint line is simply not drawn.
+     * Value is passed in at construction time; never computed inside render.
+     */
+    private final String hostIp;
+
     /** Accumulated wall time — used only for the "connecting…" dot animation, not countdown. */
     private float elapsed;
     private boolean prevEscape;
     private boolean prevR;
     private boolean prevEnter;
 
+    /**
+     * Set to {@code true} the moment {@link #update} decides to transition to
+     * {@link AppPhase#MP_MATCH}.  Guards {@link #onExit()} so DISCONNECT is only sent when
+     * the player explicitly leaves (ESC → main menu), not when the match starts.
+     */
+    private boolean leavingForMatch;
+
+    /** Convenience constructor for the JOIN flow (no host-IP hint needed). */
     public LobbyScreen(PhaseContext ctx, GameClient netClient) {
+        this(ctx, netClient, null);
+    }
+
+    /**
+     * Full constructor.
+     *
+     * @param hostIp detected LAN IP to show as a "Share IP" hint; {@code null} suppresses the line.
+     *               Only {@code CoreGame} passes a non-null value, and only when it just started
+     *               an in-process server (HOST mode).
+     */
+    public LobbyScreen(PhaseContext ctx, GameClient netClient, String hostIp) {
         this.ctx = ctx;
         this.netClient = netClient;
+        this.hostIp = hostIp;
     }
 
     // ---- PhaseHandler -----------------------------------------------------------------------
@@ -77,6 +104,7 @@ public final class LobbyScreen implements PhaseHandler {
 
         // First SNAPSHOT → server entered RUNNING; hand off to the match driver.
         if (netClient.currentSnapshot() != null) {
+            leavingForMatch = true;
             return AppPhase.MP_MATCH;
         }
 
@@ -132,12 +160,15 @@ public final class LobbyScreen implements PhaseHandler {
     }
 
     /**
-     * Sends a graceful {@code DISCONNECT} to the server before the socket is closed by
-     * {@code CoreGame}. This frees the player slot immediately so other clients can join.
+     * Sends a graceful {@code DISCONNECT} to the server when the player explicitly leaves
+     * (ESC → main menu). Skipped when transitioning to {@link AppPhase#MP_MATCH} so the
+     * client stays connected and {@link GameClient#sendInput} remains unblocked during play.
      */
     @Override
     public void onExit() {
-        netClient.sendDisconnect("left lobby");
+        if (!leavingForMatch) {
+            netClient.sendDisconnect("left lobby");
+        }
     }
 
     @Override
@@ -257,6 +288,10 @@ public final class LobbyScreen implements PhaseHandler {
         if (netClient.isHost()) {
             ctx.batch().setColor(1f, 0.85f, 0.1f, 1f);
             ctx.font().draw(ctx.batch(), "ENTER: start match", cx - 8f, cy - 82f);
+            if (hostIp != null) {
+                ctx.batch().setColor(0.55f, 0.9f, 0.55f, 1f);
+                ctx.font().draw(ctx.batch(), "Share IP: " + hostIp, cx - 8f, cy - 96f);
+            }
         }
 
         ctx.batch().setColor(1f, 1f, 1f, 1f);

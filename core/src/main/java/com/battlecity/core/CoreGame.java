@@ -16,8 +16,10 @@ import com.battlecity.game.LocalMatchController;
 import com.battlecity.game.TutorialScript;
 import com.battlecity.game.snapshot.GameSnapshot;
 import com.battlecity.input.KeyboardInputMapper;
+import com.battlecity.net.LocalAddress;
 import com.battlecity.net.client.GameClient;
 import com.battlecity.net.protocol.ProtocolConstants;
+import com.battlecity.net.server.GameServer;
 import com.battlecity.render.SnapshotRenderer;
 import com.battlecity.ui.DebugOverlay;
 import com.battlecity.ui.LobbyScreen;
@@ -74,8 +76,25 @@ public final class CoreGame extends ApplicationAdapter {
     /**
      * Active network client, shared across MP_CONNECT → MP_LOBBY → MP_MATCH phases.
      * Closed (and set to null) when returning to MAIN_MENU or entering MATCH_END.
+     *
+     * <p>In HOST mode this client connects to {@code 127.0.0.1} on the same port as
+     * {@link #hostedServer}, so it communicates with the in-process server over loopback
+     * rather than a remote machine.
      */
     private GameClient pendingNetClient;
+
+    /**
+     * In-process server started when the player chooses HOST mode.
+     * Null in JOIN mode or when no multiplayer session is active.
+     * Torn down by {@link #closeMultiplayerResources()}.
+     */
+    private GameServer hostedServer;
+
+    /**
+     * Daemon thread that drives {@link #hostedServer} at 60 Hz.
+     * Null when no hosted server is running.
+     */
+    private Thread serverThread;
 
     /**
      * Values from the last successful connection attempt (host, port, display name).
@@ -92,6 +111,13 @@ public final class CoreGame extends ApplicationAdapter {
      * next {@link com.battlecity.ui.MultiplayerConnectScreen} instance, then cleared.
      */
     private String pendingConnectError;
+
+    /**
+     * LAN IP detected when the player chose HOST mode.  Forwarded to {@link LobbyScreen} so it
+     * can show "Share IP: …" without any network calls inside the render path.
+     * Cleared by {@link #closeMultiplayerResources()} when the session ends.
+     */
+    private String pendingHostIp;
 
     /**
      * Bot seed chosen on the SP_PRESTART panel. Consumed when entering SINGLE_PLAYER to
@@ -114,7 +140,7 @@ public final class CoreGame extends ApplicationAdapter {
             this.cliHost = args[0];
             this.cliPort = Integer.parseInt(args[1]);
         } else {
-            this.cliHost = "127.0.0.1";
+            this.cliHost = LocalAddress.detect();
             this.cliPort = ProtocolConstants.DEFAULT_PORT;
         }
     }
@@ -214,31 +240,80 @@ public final class CoreGame extends ApplicationAdapter {
                     && currentHandler instanceof SinglePlayerPreStartScreen ps) {
                 pendingSeed = ps.selectedSeed();
             }
-            // When the multiplayer form confirms a JOIN, create the GameClient here so that
-            // CoreGame owns the lifecycle and MultiplayerConnectScreen stays free of net code.
+            // When the multiplayer form confirms, create the server (HOST) or client (JOIN) here
+            // so that CoreGame owns the lifecycle and MultiplayerConnectScreen stays network-free.
             if (next == AppPhase.MP_LOBBY
                     && currentHandler instanceof MultiplayerConnectScreen mcs) {
-                closeNetClient();
-                String host = mcs.selectedHost();
-                int    port = mcs.selectedPort();
-                String name = mcs.selectedDisplayName();
-                try {
-                    pendingNetClient = new GameClient(host, port, name);
-                    pendingNetClient.connect();
-                    // Persist the values so MP_CONNECT can pre-fill them if the join fails.
-                    lastConnectHost = host;
-                    lastConnectPort = port;
-                    lastConnectName = name;
-                } catch (IOException ex) {
-                    Gdx.app.error("CoreGame", "Failed to start network client: " + ex.getMessage());
-                    pendingConnectError = "Cannot connect: " + ex.getMessage();
-                    transitionTo(AppPhase.MP_CONNECT);
-                    return;
+                closeMultiplayerResources();
+                final int    port = mcs.selectedPort();
+                final String name = mcs.selectedDisplayName();
+
+                if (mcs.selectedMode() == MultiplayerConnectScreen.Mode.HOST) {
+                    try {
+                        hostedServer = new GameServer(port);
+                        // Capture into a local so the lambda sees an effectively-final reference.
+                        final GameServer srv = hostedServer;
+                        serverThread = new Thread(() -> {
+                            final long TICK_NS = 1_000_000_000L / 60;
+                            long lastNs  = System.nanoTime();
+                            long accumNs = 0;
+                            while (!Thread.currentThread().isInterrupted() && srv.isRunning()) {
+                                long now = System.nanoTime();
+                                accumNs += now - lastNs;
+                                lastNs   = now;
+                                while (accumNs >= TICK_NS) {
+                                    srv.pollNetwork();
+                                    srv.updateTick();
+                                    accumNs -= TICK_NS;
+                                }
+                                // Sleep for the idle remainder to avoid busy-spinning.
+                                long sleepNs = TICK_NS - accumNs;
+                                if (sleepNs > 1_000_000L) {
+                                    try {
+                                        Thread.sleep(sleepNs / 1_000_000L);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        break;
+                                    }
+                                }
+                            }
+                        }, "battle-city-server");
+                        serverThread.setDaemon(true);
+                        serverThread.start();
+                        pendingNetClient = new GameClient("127.0.0.1", port, name);
+                        pendingNetClient.connect();
+                        lastConnectHost = "127.0.0.1";
+                        lastConnectPort = port;
+                        lastConnectName = name;
+                        pendingHostIp   = mcs.selectedIp();
+                    } catch (IOException ex) {
+                        Gdx.app.error("CoreGame", "Failed to start hosted server: " + ex.getMessage());
+                        pendingConnectError = "Cannot host: " + ex.getMessage();
+                        closeMultiplayerResources();
+                        transitionTo(AppPhase.MP_CONNECT);
+                        return;
+                    }
+                } else {
+                    // JOIN — existing path unchanged.
+                    final String host = mcs.selectedHost();
+                    try {
+                        pendingNetClient = new GameClient(host, port, name);
+                        pendingNetClient.connect();
+                        // Persist the values so MP_CONNECT can pre-fill them if the join fails.
+                        lastConnectHost = host;
+                        lastConnectPort = port;
+                        lastConnectName = name;
+                    } catch (IOException ex) {
+                        Gdx.app.error("CoreGame", "Failed to start network client: " + ex.getMessage());
+                        pendingConnectError = "Cannot connect: " + ex.getMessage();
+                        transitionTo(AppPhase.MP_CONNECT);
+                        return;
+                    }
                 }
             }
 
             // When the lobby redirects back to MP_CONNECT (server rejected the join), capture
-            // the error text before closeNetClient() nulls the client.
+            // the error text before closeMultiplayerResources() nulls the client.
             if (next == AppPhase.MP_CONNECT && pendingNetClient != null) {
                 String lobbyErr = pendingNetClient.lastError();
                 if (lobbyErr != null) {
@@ -256,7 +331,7 @@ public final class CoreGame extends ApplicationAdapter {
             currentHandler.onExit();
             currentHandler.dispose();
         }
-        closeNetClient();
+        closeMultiplayerResources();
         if (assets != null) assets.dispose();
         if (whitePixel != null) whitePixel.dispose();
         if (font != null) font.dispose();
@@ -282,7 +357,7 @@ public final class CoreGame extends ApplicationAdapter {
 
         switch (next) {
             case MAIN_MENU -> {
-                closeNetClient();
+                closeMultiplayerResources();
                 currentHandler = new MainMenuScreen(ctx);
             }
             case SP_PRESTART -> currentHandler = new SinglePlayerPreStartScreen(ctx);
@@ -294,7 +369,7 @@ public final class CoreGame extends ApplicationAdapter {
                         ctx, AppPhase.TUTORIAL, tutorialCtrl, new TutorialScript());
             }
             case MP_CONNECT -> {
-                closeNetClient();
+                closeMultiplayerResources();
                 // Pre-fill with the last-attempted values (or CLI defaults on first visit).
                 // pendingConnectError is non-null only when returning from a failed lobby join.
                 String h = lastConnectHost != null ? lastConnectHost : cliHost;
@@ -310,12 +385,12 @@ public final class CoreGame extends ApplicationAdapter {
                 if (previousPhase == AppPhase.MP_MATCH && pendingNetClient != null) {
                     pendingNetClient.resetForLobby();
                 }
-                currentHandler = new LobbyScreen(ctx, pendingNetClient);
+                currentHandler = new LobbyScreen(ctx, pendingNetClient, pendingHostIp);
             }
             case MP_MATCH -> currentHandler = new MpMatchPhaseDriver(ctx, pendingNetClient);
             case MATCH_END -> {
                 // Net client is no longer needed after the match ends.
-                closeNetClient();
+                closeMultiplayerResources();
                 currentHandler = new MatchEndScreen(ctx, pendingFinalSnapshot);
                 pendingFinalSnapshot = null;
             }
@@ -339,10 +414,29 @@ public final class CoreGame extends ApplicationAdapter {
         }
     }
 
-    private void closeNetClient() {
+    /**
+     * Tears down all multiplayer resources in safe order:
+     * client first (sends DISCONNECT), then server (closes socket), then server thread.
+     * Idempotent — safe to call when any or all resources are already null.
+     */
+    private void closeMultiplayerResources() {
         if (pendingNetClient != null) {
             pendingNetClient.close();
             pendingNetClient = null;
         }
+        if (hostedServer != null) {
+            hostedServer.close();
+            hostedServer = null;
+        }
+        if (serverThread != null) {
+            serverThread.interrupt();
+            try {
+                serverThread.join(2_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            serverThread = null;
+        }
+        pendingHostIp = null;
     }
 }
