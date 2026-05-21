@@ -15,7 +15,7 @@ public final class BotAI {
         this.rng = rng;
     }
 
-    public void update(Tank enemy, World world, float fixedDtSeconds, Tank target) {
+    public void update(Tank enemy, World world, float fixedDtSeconds, boolean[] isBot) {
         if (!enemy.alive || world.matchOver) {
             return;
         }
@@ -24,8 +24,10 @@ public final class BotAI {
             enemy.fireCooldownTicks--;
         }
 
+        Tank target = getClosestTarget(enemy, world, isBot);
+
         boolean chasing = false;
-        if (target != null && target.alive) {
+        if (target != null) {
             float dx = target.x - enemy.x;
             float dy = target.y - enemy.y;
 
@@ -81,5 +83,24 @@ public final class BotAI {
             if (map.isSolid(x, ty)) return false;
         }
         return true;
+    }
+
+    private Tank getClosestTarget(Tank enemy, World world, boolean[] isBot) {
+        Tank closest = null;
+        float minDistSq = Float.MAX_VALUE;
+        for (int i = 0; i < World.MAX_PLAYERS; i++) {
+            if (isBot[i]) continue;
+            Tank human = world.tanks[i];
+            if (human != null && human.alive) {
+                float dx = human.x - enemy.x;
+                float dy = human.y - enemy.y;
+                float distSq = dx * dx + dy * dy;
+                if (distSq < minDistSq) {
+                    minDistSq = distSq;
+                    closest = human;
+                }
+            }
+        }
+        return closest;
     }
 }

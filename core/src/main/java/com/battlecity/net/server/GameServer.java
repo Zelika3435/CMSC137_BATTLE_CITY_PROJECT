@@ -261,7 +261,11 @@ public final class GameServer implements AutoCloseable {
             }
             case RUNNING -> {
                 World world = World.createDefault();
-                simulation = new Simulation(world, false, 0L);
+                boolean[] isBot = new boolean[ProtocolConstants.MAX_PLAYERS];
+                for (int i = 0; i < ProtocolConstants.MAX_PLAYERS; i++) {
+                    isBot[i] = !clientsByPlayerId.containsKey(i);
+                }
+                simulation = new Simulation(world, isBot, 0L, false, false);
                 lastBroadcastTiles = null;
                 nextSnapshotIsFullMap = true;
                 System.out.printf("[Server] Match started — tick=0  players=%d%n",

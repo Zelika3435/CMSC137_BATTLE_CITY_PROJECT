@@ -198,7 +198,13 @@ public final class ServerLobby {
         phase = next;
         switch (next) {
             case COUNTDOWN -> countdownTicks = COUNTDOWN_TICKS;
-            case RUNNING   -> simulation = new Simulation(World.createDefault(), false, 0L);
+            case RUNNING   -> {
+                boolean[] isBot = new boolean[MAX_PLAYERS];
+                for (int i = 0; i < MAX_PLAYERS; i++) {
+                    isBot[i] = !playerById.containsKey(i);
+                }
+                simulation = new Simulation(World.createDefault(), isBot, 0L, false, false);
+            }
             case END       -> endTicks = END_TICKS;
             case LOBBY     -> {
                 for (FsmPlayer p : playerById.values()) p.ready = false;

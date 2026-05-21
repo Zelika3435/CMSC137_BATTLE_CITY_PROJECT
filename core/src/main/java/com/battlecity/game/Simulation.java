@@ -14,6 +14,7 @@ public final class Simulation {
     public static final float FIXED_DT_SECONDS = 1f / 60f;
 
     private final World world;
+    private final boolean[] isBot;
     private final boolean offlineBotMode;
     private final boolean tutorialMode;
     private final BotAI botAI;
@@ -30,10 +31,21 @@ public final class Simulation {
     }
 
     public Simulation(World world, boolean offlineBotMode, long botSeed, boolean tutorialMode) {
+        this(world, offlineBotMode ? new boolean[]{false, true, true, true} : new boolean[]{false, false, false, false}, botSeed, tutorialMode, offlineBotMode);
+    }
+
+    public Simulation(World world, boolean[] isBot, long botSeed, boolean tutorialMode, boolean offlineBotMode) {
         this.world = world;
+        this.isBot = isBot;
         this.offlineBotMode = offlineBotMode;
         this.tutorialMode = tutorialMode;
-        this.botAI = offlineBotMode ? new BotAI(new SeededRng(botSeed)) : null;
+        
+        boolean hasBot = false;
+        for (boolean b : isBot) {
+            if (b) hasBot = true;
+        }
+        this.botAI = hasBot ? new BotAI(new SeededRng(botSeed)) : null;
+        
         for (int i = 0; i < tickInputs.length; i++) {
             tickInputs[i] = new TickInput();
         }
@@ -115,12 +127,12 @@ public final class Simulation {
             }
         }
 
-        if (offlineBotMode && botAI != null) {
-            Tank player = world.tanks[0];
-            for (int i = 1; i < World.MAX_PLAYERS; i++) {
+        if (botAI != null) {
+            for (int i = 0; i < World.MAX_PLAYERS; i++) {
+                if (!isBot[i]) continue;
                 Tank enemy = world.tanks[i];
                 if (enemy != null && enemy.alive) {
-                    botAI.update(enemy, world, FIXED_DT_SECONDS, player);
+                    botAI.update(enemy, world, FIXED_DT_SECONDS, isBot);
                 }
             }
         }
@@ -130,8 +142,8 @@ public final class Simulation {
             if (tank == null || !tank.alive) {
                 continue;
             }
-            TickInput input = tickInputs[playerId];
-            if (!offlineBotMode || playerId == 0) {
+            if (!isBot[playerId]) {
+                TickInput input = tickInputs[playerId];
                 MovementSystem.moveTank(tank, input.moveDir, FIXED_DT_SECONDS, world.map);
                 if (input.fire) {
                     ProjectileSystem.trySpawn(world, tank);
