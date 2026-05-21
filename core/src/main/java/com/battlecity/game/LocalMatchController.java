@@ -22,10 +22,14 @@ public final class LocalMatchController {
     private GameSnapshot prev;
     private GameSnapshot cur;
 
-    private LocalMatchController(World world, boolean botMode, long botSeed) {
-        this.simulation = new Simulation(world, botMode, botSeed);
+    private LocalMatchController(World world, boolean botMode, long botSeed, boolean tutorialMode) {
+        this.simulation = new Simulation(world, botMode, botSeed, tutorialMode);
         this.cur = simulation.snapshot();
         this.prev = cur;
+    }
+
+    private LocalMatchController(World world, boolean botMode, long botSeed) {
+        this(world, botMode, botSeed, false);
     }
 
     /**
@@ -52,7 +56,11 @@ public final class LocalMatchController {
     public static LocalMatchController forTutorial() {
         World world = new World(MapFactory.createTutorialMap());
         MapFactory.spawnTutorialTank(world);
-        return new LocalMatchController(world, false, 0L);
+        return new LocalMatchController(world, false, 0L, true);
+    }
+
+    public boolean tutorialMode() {
+        return simulation.tutorialMode();
     }
 
     /**

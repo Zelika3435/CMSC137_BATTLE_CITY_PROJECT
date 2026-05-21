@@ -51,6 +51,9 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
     /** When true, match is over and the player must confirm quit (no auto menu hop). */
     private boolean defeatOverlayActive;
 
+    /** Tutorial finished — simulation stopped; prompt return to menu. */
+    private boolean tutorialCompleteActive;
+
     /**
      * Single-player or tutorial driver.
      *
@@ -97,6 +100,13 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         }
         prevEscape = escNow;
 
+        if (tutorialCompleteActive) {
+            if (inputGate.confirmJustPressed()) {
+                return AppPhase.MAIN_MENU;
+            }
+            return ownPhase;
+        }
+
         if (defeatOverlayActive) {
             if (inputGate.confirmJustPressed()) {
                 return AppPhase.MAIN_MENU;
@@ -108,6 +118,11 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         while (accumulator >= FIXED_DT) {
             runTick();
             accumulator -= FIXED_DT;
+            if (tutorialScript != null && (tutorialScript.isDone() || match.isMatchOver())) {
+                tutorialCompleteActive = true;
+                accumulator = 0f;
+                return ownPhase;
+            }
             if (match.isMatchOver() && tutorialScript == null) {
                 defeatOverlayActive = true;
                 accumulator = 0f;
@@ -122,18 +137,22 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         float alpha = accumulator / FIXED_DT;
         GameSnapshot snap = match.snapshot();
         ctx.snapshotRenderer().render(match.previousSnapshot(), snap, alpha, LOCAL_PLAYER_ID);
-        if (tutorialOverlay != null) {
+        if (tutorialOverlay != null && !tutorialCompleteActive) {
             tutorialOverlay.render(tutorialScript);
         }
 
-        MatchScreenOverlay.LocalStatus status =
-                MatchScreenOverlay.localStatus(snap, LOCAL_PLAYER_ID);
-        if (status == MatchScreenOverlay.LocalStatus.WAITING_RESPAWN) {
-            TankSnapshot local = localTank(snap);
-            int ticks = local != null ? local.respawnCooldownTicks() : 0;
-            MatchScreenOverlay.renderDeath(ctx, ticks);
-        } else if (defeatOverlayActive) {
-            MatchScreenOverlay.renderSinglePlayerEnd(ctx, snap, LOCAL_PLAYER_ID);
+        if (tutorialCompleteActive) {
+            MatchScreenOverlay.renderTutorialComplete(ctx);
+        } else {
+            MatchScreenOverlay.LocalStatus status =
+                    MatchScreenOverlay.localStatus(snap, LOCAL_PLAYER_ID);
+            if (status == MatchScreenOverlay.LocalStatus.WAITING_RESPAWN) {
+                TankSnapshot local = localTank(snap);
+                int ticks = local != null ? local.respawnCooldownTicks() : 0;
+                MatchScreenOverlay.renderDeath(ctx, ticks);
+            } else if (defeatOverlayActive) {
+                MatchScreenOverlay.renderSinglePlayerEnd(ctx, snap, LOCAL_PLAYER_ID);
+            }
         }
     }
 
@@ -151,6 +170,10 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
     // ---- Private ----------------------------------------------------------------------------
 
     private void runTick() {
+        if (tutorialCompleteActive) {
+            return;
+        }
+
         KeyboardInputMapper.LocalInput input = pollInput();
 
         if (input.debugToggle()) {
@@ -158,8 +181,9 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         }
 
         GameSnapshot snap = match.snapshot();
-        if (MatchScreenOverlay.localStatus(snap, LOCAL_PLAYER_ID)
-                != MatchScreenOverlay.LocalStatus.PLAYING) {
+        if (tutorialScript == null
+                && MatchScreenOverlay.localStatus(snap, LOCAL_PLAYER_ID)
+                        != MatchScreenOverlay.LocalStatus.PLAYING) {
             match.tick(null, false);
         } else {
             match.tick(input.moveDir(), input.firePressed());
@@ -192,14 +216,15 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
         boolean fire  = Gdx.input.isKeyPressed(Input.Keys.SPACE);
         boolean f3    = Gdx.input.isKeyPressed(Input.Keys.F3);
 
-        if (defeatOverlayActive
+        if (tutorialCompleteActive
+                || defeatOverlayActive
                 || MatchScreenOverlay.localStatus(match.snapshot(), LOCAL_PLAYER_ID)
                         == MatchScreenOverlay.LocalStatus.WAITING_RESPAWN) {
             left = right = up = down = fire = false;
         }
 
         // In tutorial mode, mask inputs to only what the current step teaches.
-        if (tutorialScript != null) {
+        if (tutorialScript != null && !tutorialCompleteActive) {
             switch (tutorialScript.currentStep()) {
                 case MOVE_SOUTH -> {
                     left  = false;
@@ -216,7 +241,6 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
                 case DESTROY_BRICK -> {
                     left  = false;
                     right = false;
-                    up    = false;
                     down  = false;
                 }
                 case DESTROY_BASE -> {

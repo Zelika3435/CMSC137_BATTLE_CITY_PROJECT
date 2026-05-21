@@ -61,6 +61,12 @@ public class TutorialScriptTest {
      * Verifies that a fresh tutorial script starts on {@link TutorialScript.Step#MOVE_SOUTH}.
      */
     @Test
+    public void tutorialControllerUsesTutorialSimulationMode() {
+        LocalMatchController ctrl = LocalMatchController.forTutorial();
+        assertTrue(ctrl.tutorialMode());
+    }
+
+    @Test
     public void initialStepIsMOVE_SOUTH() {
         LocalMatchController ctrl   = LocalMatchController.forTutorial();
         TutorialScript       script = new TutorialScript();

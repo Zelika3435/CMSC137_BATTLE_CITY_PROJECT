@@ -15,6 +15,7 @@ public final class Simulation {
 
     private final World world;
     private final boolean offlineBotMode;
+    private final boolean tutorialMode;
     private final BotAI botAI;
     private final TickInput[] tickInputs = new TickInput[World.MAX_PLAYERS];
     private final Set<String> appliedInputKeys = new HashSet<>();
@@ -25,8 +26,13 @@ public final class Simulation {
     }
 
     public Simulation(World world, boolean offlineBotMode, long botSeed) {
+        this(world, offlineBotMode, botSeed, false);
+    }
+
+    public Simulation(World world, boolean offlineBotMode, long botSeed, boolean tutorialMode) {
         this.world = world;
         this.offlineBotMode = offlineBotMode;
+        this.tutorialMode = tutorialMode;
         this.botAI = offlineBotMode ? new BotAI(new SeededRng(botSeed)) : null;
         for (int i = 0; i < tickInputs.length; i++) {
             tickInputs[i] = new TickInput();
@@ -35,6 +41,10 @@ public final class Simulation {
 
     public World world() {
         return world;
+    }
+
+    public boolean tutorialMode() {
+        return tutorialMode;
     }
 
     public long tickCount() {
@@ -156,8 +166,10 @@ public final class Simulation {
      * losing (including the host) does not end the round for everyone else.
      */
     private void checkMatchOver() {
-        if (world.map.widthTiles() == MapFactory.TUTORIAL_WIDTH
-                && world.map.heightTiles() == MapFactory.TUTORIAL_HEIGHT) {
+        if (tutorialMode) {
+            if (world.baseDestroyed) {
+                world.matchOver = true;
+            }
             return;
         }
 

@@ -36,7 +36,7 @@ public final class TutorialScript {
         /** Step 2: Face north in preparation for firing. */
         FACE_NORTH("Face north",                   "Press W or the UP arrow"),
         /** Step 3: Destroy the brick wall. */
-        DESTROY_BRICK("Destroy the brick wall",    "Aim north and press SPACE"),
+        DESTROY_BRICK("Destroy the brick wall",    "Move up (W/↑) and press SPACE to fire"),
         /** Step 4: Shoot and destroy the BASE tiles. */
         DESTROY_BASE("Destroy the base",           "Drive north, fire at the BASE"),
         /** Terminal state — tutorial is complete. */
@@ -93,6 +93,11 @@ public final class TutorialScript {
      * @param events   events from the same tick ({@code LocalMatchController.lastEvents()})
      */
     public void evaluate(GameSnapshot snapshot, List<GameEvent> events) {
+        if (snapshot.matchOver() && current != Step.DONE) {
+            advance();
+            return;
+        }
+
         TankSnapshot player = playerTank(snapshot);
         if (player == null || !player.alive()) {
             return;

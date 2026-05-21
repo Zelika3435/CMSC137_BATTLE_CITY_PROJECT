@@ -125,6 +125,26 @@ public final class MatchScreenOverlay {
         ctx.batch().setColor(1f, 1f, 1f, 1f);
     }
 
+    /** Tutorial finished — full-screen dim with return-to-menu prompt. */
+    public static void renderTutorialComplete(PhaseContext ctx) {
+        float w = ctx.viewport().getWorldWidth();
+        float h = ctx.viewport().getWorldHeight();
+        float cx = w / 2f;
+        float cy = h / 2f;
+
+        ctx.batch().setColor(0.08f, 0.10f, 0.08f, 0.72f);
+        ctx.batch().draw(ctx.whitePixel(), 0f, 0f, w, h);
+
+        ctx.batch().setColor(0.35f, 1f, 0.45f, 1f);
+        ctx.font().draw(ctx.batch(), "Tutorial complete!", cx - 76f, cy + 24f);
+
+        ctx.batch().setColor(0.75f, 0.75f, 0.75f, 1f);
+        ctx.font().draw(ctx.batch(), "You destroyed the base.", cx - 88f, cy - 4f);
+        ctx.batch().setColor(0.55f, 0.55f, 0.55f, 1f);
+        ctx.font().draw(ctx.batch(), "ENTER / ESC: Main menu", cx - 88f, cy - 36f);
+        ctx.batch().setColor(1f, 1f, 1f, 1f);
+    }
+
     /** Single-player defeat / match-end screen (no lobby rejoin). */
     public static void renderSinglePlayerEnd(PhaseContext ctx, GameSnapshot snap, int localPlayerId) {
         float w = ctx.viewport().getWorldWidth();

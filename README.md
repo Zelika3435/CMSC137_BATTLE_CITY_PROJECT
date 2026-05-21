@@ -71,17 +71,17 @@ MATCH_END               MP_MATCH (live game)
    - `ESC: back to menu` reminder (right side)
 3. **Step 1 — Move south:** only **S / ↓** is active — other movement keys and FIRE are locked. Completes when the tank moves ≥ 1 tile south of spawn.
 4. **Step 2 — Face north:** only **W / ↑** is active — other movement and FIRE are locked. Completes when facing UP.
-5. **Step 3 — Destroy brick:** only **SPACE** is active — all movement is locked. Completes on the first `TileDestroyed(BRICK)` event.
-6. **Step 4 — Destroy the base:** all **movement keys** and **FIRE** are active. Drive north through the cleared brick row and shoot the gold BASE tiles — completes when a `BaseHit` event is detected.
-7. The panel turns green and shows **"Tutorial complete!"** when all four steps are done; all controls are then locked until ESC.
+5. **Step 3 — Destroy brick:** **W / ↑** and **SPACE** are active — drive north and fire at the brick row (same projectile/tile rules as the full game). Completes on the first `TileDestroyed(BRICK)` event.
+6. **Step 4 — Destroy the base:** all **movement keys** and **FIRE** are active. Drive north through the cleared brick row and shoot the gold BASE tiles — completes when a `BaseHit` event is detected and the match ends.
+7. A **tutorial complete** overlay appears (base destroyed, full simulation rules applied). Press **ENTER** or **ESC** to return to the main menu.
 8. Press **ESC** at any point to return to the main menu. **F3** (debug overlay) is always available.
 
 **Notes:**
 - Controls outside the current step are silently ignored — the game only responds to keys taught by the active step.
 - Steps advance from deterministic simulation conditions (events / position / direction) — never from wall-clock time; the tutorial is headless-testable.
-- The BASE is protected by a STEEL guard wall on its south face; bullets cannot destroy it accidentally.
-- No bots; no networking.
-- **Map:** 13×13 with a STEEL obstacle, a 3-brick cluster, a STEEL guard wall, and a 2-tile BASE.
+- A **STEEL** tile sits west of the bricks (indestructible); only **BRICK** and **BASE** tiles can be destroyed.
+- Uses the same fixed-timestep simulation as single-player (movement, projectiles, tile impacts, `matchOver` on base loss). No bots; no networking.
+- **Map:** 13×13 with a STEEL obstacle, a 3-brick cluster, and a 2-tile BASE north of the spawn.
 
 ---
 
