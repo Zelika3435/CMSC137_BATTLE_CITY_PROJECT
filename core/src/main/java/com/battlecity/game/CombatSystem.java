@@ -26,6 +26,13 @@ public final class CombatSystem {
                     TankDestroyed destroyed = new TankDestroyed(tank.entityId, tank.playerId);
                     world.events.emit(destroyed);
                     applied.add(destroyed);
+                    
+                    if (world.hasBaseLeft(tank.playerId)) {
+                        tank.respawnCooldownTicks = 120; // 2-second delay
+                    } else {
+                        tank.respawnCooldownTicks = -1; // Permanently dead
+                        tank.eliminated = true;
+                    }
                 }
                 applied.add(hit);
             } else if (event instanceof TileDestroyed destroyed) {
@@ -33,9 +40,32 @@ public final class CombatSystem {
                 applied.add(destroyed);
             } else if (event instanceof BaseHit hit) {
                 world.map.setTile(hit.tileX(), hit.tileY(), Tile.EMPTY);
-                world.baseDestroyed = true;
-                world.matchOver = true;
                 applied.add(hit);
+
+                if (world.map.widthTiles() == MapFactory.TUTORIAL_WIDTH && world.map.heightTiles() == MapFactory.TUTORIAL_HEIGHT) {
+                    world.baseDestroyed = true;
+                    world.matchOver = true;
+                } else {
+                    int baseOwnerId = world.getPlayerIdForTile(hit.tileX(), hit.tileY());
+                    if (!world.hasBaseLeft(baseOwnerId)) {
+                        // Base annihilated! Player is automatically eliminated.
+                        Tank tank = world.tankByPlayerId(baseOwnerId);
+                        if (tank != null) {
+                            tank.eliminated = true;
+                            if (tank.alive) {
+                                tank.alive = false;
+                                TankDestroyed destroyed = new TankDestroyed(tank.entityId, tank.playerId);
+                                world.events.emit(destroyed);
+                                applied.add(destroyed);
+                            }
+                            tank.respawnCooldownTicks = -1; // Permanently dead / eliminated
+                        }
+                        if (baseOwnerId == 0) {
+                            world.baseDestroyed = true;
+                            world.matchOver = true;
+                        }
+                    }
+                }
             } else if (event instanceof TankDestroyed destroyed) {
                 applied.add(destroyed);
             } else {

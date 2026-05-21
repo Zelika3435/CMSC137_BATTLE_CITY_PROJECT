@@ -57,7 +57,7 @@ MATCH_END               MP_MATCH (live game)
 5. The match ends when the **BASE** is destroyed or all enemy tanks are eliminated.
 6. Press **ENTER** on the result screen to return to the main menu.
 
-**Map:** 26×26 tile arena — STEEL border, randomised BRICK clusters, BASE tile at top-centre protected by a steel wrap.
+**Map:** 26×26 tile arena — STEEL border, steel L-shaped corner bases protecting each spawn, symmetric brick corridor walls and steel pillars creating lanes and chokepoints, central BASE at (12,12)–(13,12) equidistant from all four spawns.
 
 ---
 
@@ -200,7 +200,7 @@ The overlay reads only from immutable snapshots and `NetStatsSnapshot` — it ha
 ### What you should see
 
 - **Main menu:** four options — Single Player · Tutorial · Multiplayer · Quit.
-- **Single-player / bots:** 26×26 tile arena (steel border, brick clusters, BASE at top-centre); your tank highlighted white, bots moving autonomously.
+- **Single-player / bots:** 26×26 tile arena (steel border, corner base pockets, brick/steel corridors, central BASE); your tank highlighted white, bots moving autonomously.
 - **Tutorial:** 13×13 map; TutorialOverlay panel at top with step counter, progress dots, and hints; BASE shielded by steel guard wall.
 - **Multiplayer lobby:** player roster, ready badges, countdown timer.
 - **Match:** four-colour tanks, yellow bullets; brick tiles destroyed by matching-coloured shots; tile destruction synced authoritatively by server.

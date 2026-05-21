@@ -29,10 +29,10 @@ public final class BotAI {
             float dx = target.x - enemy.x;
             float dy = target.y - enemy.y;
 
-            if (Math.abs(dx) < CHASE_LATERAL_THRESHOLD && Math.abs(dy) > 16f) {
+            if (Math.abs(dx) < CHASE_LATERAL_THRESHOLD && Math.abs(dy) > 16f && hasVerticalLineOfSight(enemy, target, world.map)) {
                 enemy.dir = dy > 0 ? Direction.UP : Direction.DOWN;
                 chasing = true;
-            } else if (Math.abs(dy) < CHASE_LATERAL_THRESHOLD && Math.abs(dx) > 16f) {
+            } else if (Math.abs(dy) < CHASE_LATERAL_THRESHOLD && Math.abs(dx) > 16f && hasHorizontalLineOfSight(enemy, target, world.map)) {
                 enemy.dir = dx > 0 ? Direction.RIGHT : Direction.LEFT;
                 chasing = true;
             }
@@ -59,5 +59,27 @@ public final class BotAI {
                 enemy.fireCooldownTicks = FIRE_COOLDOWN_TICKS;
             }
         }
+    }
+
+    private boolean hasVerticalLineOfSight(Tank enemy, Tank target, TileMap map) {
+        float tileSize = map.tileSize();
+        int tx = (int) (enemy.x / tileSize);
+        int startY = (int) (Math.min(enemy.y, target.y) / tileSize);
+        int endY = (int) (Math.max(enemy.y, target.y) / tileSize);
+        for (int y = startY; y <= endY; y++) {
+            if (map.isSolid(tx, y)) return false;
+        }
+        return true;
+    }
+
+    private boolean hasHorizontalLineOfSight(Tank enemy, Tank target, TileMap map) {
+        float tileSize = map.tileSize();
+        int ty = (int) (enemy.y / tileSize);
+        int startX = (int) (Math.min(enemy.x, target.x) / tileSize);
+        int endX = (int) (Math.max(enemy.x, target.x) / tileSize);
+        for (int x = startX; x <= endX; x++) {
+            if (map.isSolid(x, ty)) return false;
+        }
+        return true;
     }
 }

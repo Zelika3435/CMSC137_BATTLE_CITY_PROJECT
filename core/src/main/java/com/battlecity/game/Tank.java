@@ -9,6 +9,11 @@ public final class Tank {
     public float prevX;
     public float prevY;
 
+    public final float spawnX;
+    public final float spawnY;
+    public int respawnCooldownTicks = -1;
+    public boolean eliminated = false;
+
     public Direction dir = Direction.UP;
     public float speed = 120f;
     public float halfW = 6f;
@@ -23,5 +28,7 @@ public final class Tank {
         this.y = y;
         this.prevX = x;
         this.prevY = y;
+        this.spawnX = x;
+        this.spawnY = y;
     }
 }
