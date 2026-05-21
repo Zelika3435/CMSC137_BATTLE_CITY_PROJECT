@@ -99,7 +99,6 @@ public final class LobbyScreen implements PhaseHandler {
         }
         prevEscape = escNow;
 
-        netClient.poll();
         netClient.endTick();
 
         // First SNAPSHOT → server entered RUNNING; hand off to the match driver.
@@ -128,6 +127,7 @@ public final class LobbyScreen implements PhaseHandler {
      */
     @Override
     public void render() {
+        netClient.poll();
         final float cx = ctx.viewport().getWorldWidth() / 2f;
         final float cy = ctx.viewport().getWorldHeight() / 2f;
 

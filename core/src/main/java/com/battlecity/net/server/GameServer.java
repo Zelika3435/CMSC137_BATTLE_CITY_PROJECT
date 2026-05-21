@@ -3,7 +3,12 @@ package com.battlecity.net.server;
 import com.battlecity.game.QueuedCommand;
 import com.battlecity.game.Simulation;
 import com.battlecity.game.World;
+import com.battlecity.game.Tile;
 import com.battlecity.game.snapshot.GameSnapshot;
+import com.battlecity.game.snapshot.SnapshotBuilder;
+import com.battlecity.game.snapshot.SnapshotTileDelta;
+import com.battlecity.game.snapshot.TileChange;
+import com.battlecity.net.protocol.SnapshotFormat;
 import com.battlecity.net.protocol.LobbyPhase;
 import com.battlecity.net.protocol.MessageCodec;
 import com.battlecity.net.protocol.MessageType;
@@ -119,6 +124,15 @@ public final class GameServer implements AutoCloseable {
      * LOBBY_STATE broadcasts without relying on the simulation tick counter.
      */
     private long totalTicks = 0L;
+
+    /**
+     * Authoritative tiles last sent to clients; used to compute per-tick deltas. Reset when a
+     * match enters {@link ServerPhase#RUNNING}.
+     */
+    private Tile[] lastBroadcastTiles;
+
+    /** When {@code true}, the next {@link #broadcastSnapshot()} sends {@link SnapshotFormat#FULL_MAP}. */
+    private boolean nextSnapshotIsFullMap;
 
     // -----------------------------------------------------------------------------------------
 
@@ -248,6 +262,8 @@ public final class GameServer implements AutoCloseable {
             case RUNNING -> {
                 World world = World.createDefault();
                 simulation = new Simulation(world, false, 0L);
+                lastBroadcastTiles = null;
+                nextSnapshotIsFullMap = true;
                 System.out.printf("[Server] Match started — tick=0  players=%d%n",
                         clientsByAddress.size());
             }
@@ -332,30 +348,93 @@ public final class GameServer implements AutoCloseable {
     // ---- Snapshot broadcast (RUNNING only) --------------------------------------------------
 
     private void broadcastSnapshot() {
-        GameSnapshot snapshot = simulation.snapshot();
+        NetMessages.SnapshotPayload payload = buildSnapshotPayload();
         for (ClientConnection client : clientsByPlayerId.values()) {
             try {
-                sendSnapshot(client, snapshot);
+                sendSnapshot(client, payload);
             } catch (IOException ex) {
                 ex.printStackTrace();
             }
         }
     }
 
-    private void sendSnapshot(ClientConnection client, GameSnapshot snapshot) throws IOException {
+    private NetMessages.SnapshotPayload buildSnapshotPayload() {
+        var world = simulation.world();
+        Tile[] currentTiles = world.map.copyTiles();
+        GameSnapshot entitySnapshot = SnapshotBuilder.build(world, false);
+
+        if (nextSnapshotIsFullMap || lastBroadcastTiles == null) {
+            nextSnapshotIsFullMap = false;
+            lastBroadcastTiles = currentTiles.clone();
+            GameSnapshot full = new GameSnapshot(
+                    entitySnapshot.serverTick(),
+                    entitySnapshot.stateHash(),
+                    entitySnapshot.mapWidthTiles(),
+                    entitySnapshot.mapHeightTiles(),
+                    entitySnapshot.tileSize(),
+                    lastBroadcastTiles.clone(),
+                    entitySnapshot.tanks(),
+                    entitySnapshot.projectiles(),
+                    entitySnapshot.baseDestroyed(),
+                    entitySnapshot.matchOver()
+            );
+            return NetMessages.SnapshotPayload.fullMap(full);
+        }
+
+        List<TileChange> changes = SnapshotTileDelta.collectChanges(lastBroadcastTiles, currentTiles);
+        System.arraycopy(currentTiles, 0, lastBroadcastTiles, 0, currentTiles.length);
+
+        NetMessages.SnapshotPayload delta =
+                NetMessages.SnapshotPayload.delta(entitySnapshot, changes);
+        byte[] encoded = MessageCodec.encode(snapshotPacketForSizeCheck(delta));
+        if (encoded.length > ProtocolConstants.MAX_PACKET_BYTES) {
+            nextSnapshotIsFullMap = true;
+            lastBroadcastTiles = currentTiles.clone();
+            GameSnapshot full = new GameSnapshot(
+                    entitySnapshot.serverTick(),
+                    entitySnapshot.stateHash(),
+                    entitySnapshot.mapWidthTiles(),
+                    entitySnapshot.mapHeightTiles(),
+                    entitySnapshot.tileSize(),
+                    lastBroadcastTiles.clone(),
+                    entitySnapshot.tanks(),
+                    entitySnapshot.projectiles(),
+                    entitySnapshot.baseDestroyed(),
+                    entitySnapshot.matchOver()
+            );
+            return NetMessages.SnapshotPayload.fullMap(full);
+        }
+        return delta;
+    }
+
+    private static NetMessages.NetPacket snapshotPacketForSizeCheck(NetMessages.SnapshotPayload payload) {
+        PacketHeader header = new PacketHeader(
+                ProtocolConstants.PROTOCOL_VERSION,
+                MessageType.SNAPSHOT,
+                0,
+                0,
+                0,
+                0,
+                payload.snapshot().serverTick()
+        );
+        return new NetMessages.NetPacket(header, payload);
+    }
+
+    private void sendSnapshot(ClientConnection client, NetMessages.SnapshotPayload payload)
+            throws IOException {
+        GameSnapshot snapshot = payload.snapshot();
         PacketHeader header = new PacketHeader(
                 ProtocolConstants.PROTOCOL_VERSION,
                 MessageType.SNAPSHOT,
                 client.sessionId,
                 client.playerId,
                 globalSeq++,
-                client.lastAck,
+                client.lastSeq,
                 snapshot.serverTick()
         );
         client.packetsSent++;
         transport.send(
-                MessageCodec.encode(new NetMessages.NetPacket(header,
-                        new NetMessages.SnapshotPayload(snapshot))),
+                MessageCodec.encode(new NetMessages.NetPacket(header, payload)),
                 client.address
         );
     }

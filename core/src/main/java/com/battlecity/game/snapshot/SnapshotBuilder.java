@@ -12,7 +12,17 @@ import java.util.List;
 public final class SnapshotBuilder {
     private SnapshotBuilder() {}
 
+    private static final Tile[] NO_TILES = new Tile[0];
+
     public static GameSnapshot build(World world) {
+        return build(world, true);
+    }
+
+    /**
+     * @param includeTiles when {@code false}, {@link GameSnapshot#tiles()} is empty (for delta
+     *                     wire payloads; entity fields are still populated).
+     */
+    public static GameSnapshot build(World world, boolean includeTiles) {
         List<TankSnapshot> tankSnapshots = new ArrayList<>();
         for (Tank tank : world.tanks) {
             if (tank == null) {
@@ -50,13 +60,14 @@ public final class SnapshotBuilder {
         projectileSnapshots.sort(Comparator.comparingInt(ProjectileSnapshot::entityId));
 
         long hash = StateHasher.hash(world);
+        Tile[] tiles = includeTiles ? world.map.copyTiles() : NO_TILES;
         return new GameSnapshot(
                 world.tickCount,
                 hash,
                 world.map.widthTiles(),
                 world.map.heightTiles(),
                 world.map.tileSize(),
-                world.map.copyTiles(),
+                tiles,
                 List.copyOf(tankSnapshots),
                 List.copyOf(projectileSnapshots),
                 world.baseDestroyed,

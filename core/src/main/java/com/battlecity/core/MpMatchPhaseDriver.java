@@ -6,18 +6,20 @@ import com.battlecity.game.snapshot.GameSnapshot;
 import com.battlecity.game.snapshot.TankSnapshot;
 import com.battlecity.input.KeyboardInputMapper;
 import com.battlecity.net.client.GameClient;
+import com.battlecity.net.client.SnapshotInterpolationBuffer;
 
 /**
  * Phase driver for {@link AppPhase#MP_MATCH}.
  *
- * <p>Runs a 60 Hz tick loop to send player inputs at a consistent rate. Rendering is driven
- * entirely by server-authoritative snapshots received via {@link GameClient}; no local simulation
- * runs here.
+ * <p>Runs a 60 Hz tick loop to send player inputs at a consistent rate. Inbound snapshots are
+ * drained every render frame via {@link GameClient#poll()} so display state is not limited to
+ * tick boundaries. Rendering is driven by server-authoritative snapshots; no local simulation
+ * runs in {@link #render()}.
  *
  * <h3>Match lifecycle</h3>
  * <ol>
  *   <li>On entry, a "GO!" overlay fades out over {@link #GO_DURATION} s.
- *   <li>Normal play: inputs sent, snapshots rendered with linear interpolation (prev→cur).
+ *   <li>Normal play: inputs sent; render uses a delayed snapshot buffer (prev→cur + alpha).
  *   <li>When {@code snapshot.matchOver()} is detected, {@link #endOverlayTimer} is armed and
  *       the tick loop stops.  An end panel is shown over the last game frame.
  *   <li>After {@link #END_OVERLAY_DURATION} s or an {@code ENTER} keypress the driver returns
@@ -75,8 +77,6 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
         // ---- End overlay mode ---------------------------------------------------------------
         if (endOverlayTimer >= 0f) {
             endOverlayTimer -= dt;
-            // Keep network alive during the overlay so LOBBY_STATE packets are received.
-            netClient.poll();
             netClient.endTick();
 
             boolean enterNow = Gdx.input.isKeyPressed(Input.Keys.ENTER);
@@ -106,6 +106,9 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
 
     @Override
     public void render() {
+        netClient.poll();
+        ctx.debugOverlay().update(netClient.netStats());
+
         GameSnapshot snap = netClient.currentSnapshot();
         if (snap == null) {
             ctx.batch().setColor(1f, 1f, 1f, 1f);
@@ -113,9 +116,13 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
             return;
         }
 
-        // Freeze interpolation while the end overlay is showing (no more ticks running).
-        float alpha = endOverlayTimer >= 0f ? 0f : accumulator / FIXED_DT;
-        ctx.snapshotRenderer().render(netClient.previousSnapshot(), snap, alpha, netClient.playerId());
+        SnapshotInterpolationBuffer.InterpolationSample interp = netClient.interpolationSample();
+        GameSnapshot renderPrev = interp != null ? interp.prev() : snap;
+        GameSnapshot renderCur  = interp != null ? interp.cur() : snap;
+        float alpha = endOverlayTimer >= 0f ? 0f : (interp != null ? interp.alpha() : 0f);
+        ctx.snapshotRenderer().render(
+                renderPrev, renderCur, alpha,
+                netClient.playerId(), netClient.predictedLocalTank());
 
         // "GO!" flash — purely visual; fades linearly.
         if (goTimer > 0f) {
@@ -200,8 +207,9 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
             ctx.debugOverlay().toggle();
         }
 
-        netClient.poll();
         netClient.sendInput(input.moveDir(), input.firePressed());
+        // Step the local prediction forward with the same input sent to the server.
+        netClient.stepPrediction(input.moveDir());
         netClient.endTick();
         ctx.debugOverlay().update(netClient.netStats());
     }

@@ -101,7 +101,26 @@ public final class SnapshotRenderer {
 
     // ---- Main render entry ------------------------------------------------------------------
 
+    /**
+     * Renders a snapshot without client-side prediction (single-player and tutorial).
+     */
     public void render(GameSnapshot previous, GameSnapshot current, float alpha, int localPlayerId) {
+        render(previous, current, alpha, localPlayerId, null);
+    }
+
+    /**
+     * Renders a snapshot, optionally blending in a client-side-predicted pose for the local
+     * player's tank.
+     *
+     * <p>When {@code predictedLocal} is non-null and the local player is alive, the predicted
+     * position (sub-tick interpolated via {@code predictedLocal.prevX/Y → x/y}) is used instead
+     * of the server-interpolated position.  Remote tanks and projectiles always use server data.
+     *
+     * @param predictedLocal predicted pose for the local player, or {@code null} to fall back
+     *                       to server interpolation (same as calling the 4-arg overload)
+     */
+    public void render(GameSnapshot previous, GameSnapshot current, float alpha,
+                       int localPlayerId, TankSnapshot predictedLocal) {
         if (current == null) {
             return;
         }
@@ -112,7 +131,7 @@ public final class SnapshotRenderer {
         detectDeaths(current);
 
         drawTiles(current, useSprites);
-        drawTanks(prev, current, alpha, localPlayerId, useSprites);
+        drawTanks(prev, current, alpha, localPlayerId, predictedLocal, useSprites);
         drawProjectiles(prev, current, alpha);
         drawSmoke(dt, useSprites);
         debugOverlay.render(batch, font);
@@ -193,19 +212,36 @@ public final class SnapshotRenderer {
     // ---- Tank drawing -----------------------------------------------------------------------
 
     private void drawTanks(GameSnapshot prev, GameSnapshot current,
-                           float alpha, int localPlayerId, boolean useSprites) {
+                           float alpha, int localPlayerId,
+                           TankSnapshot predictedLocal, boolean useSprites) {
         for (TankSnapshot tank : current.tanks()) {
             if (!tank.alive()) {
                 continue;
             }
-            final TankSnapshot prevTank = findTank(prev, tank.playerId());
-            final float x = prevTank == null ? tank.x() : MathUtils.lerp(prevTank.x(), tank.x(), alpha);
-            final float y = prevTank == null ? tank.y() : MathUtils.lerp(prevTank.y(), tank.y(), alpha);
+
+            final float x;
+            final float y;
+            final TankSnapshot renderTank;
+
+            if (predictedLocal != null
+                    && tank.playerId() == localPlayerId
+                    && predictedLocal.alive()) {
+                // Local player: use predicted pose with sub-tick interpolation.
+                renderTank = predictedLocal;
+                x = MathUtils.lerp(predictedLocal.prevX(), predictedLocal.x(), alpha);
+                y = MathUtils.lerp(predictedLocal.prevY(), predictedLocal.y(), alpha);
+            } else {
+                // Remote players (or local player when prediction is unavailable): server lerp.
+                renderTank = tank;
+                final TankSnapshot prevTank = findTank(prev, tank.playerId());
+                x = prevTank == null ? tank.x() : MathUtils.lerp(prevTank.x(), tank.x(), alpha);
+                y = prevTank == null ? tank.y() : MathUtils.lerp(prevTank.y(), tank.y(), alpha);
+            }
 
             if (useSprites) {
-                drawTankSprite(tank, x, y, localPlayerId);
+                drawTankSprite(renderTank, x, y, localPlayerId);
             } else {
-                drawTankFallback(tank, x, y, localPlayerId);
+                drawTankFallback(renderTank, x, y, localPlayerId);
             }
         }
     }

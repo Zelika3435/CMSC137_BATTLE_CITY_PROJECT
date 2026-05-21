@@ -1,4 +1,4 @@
-## Battle City (LibGDX) — 4-player authoritative multiplayer
+﻿## Battle City (LibGDX) — 4-player authoritative multiplayer
 
 ---
 
@@ -149,6 +149,84 @@ Once connected, the **LobbyScreen** shows:
 - **WASD / arrow keys** — move / face; **SPACE** — fire.
 - The client only sends input commands; the server is authoritative for all positions, collisions, and tile destruction.
 
+#### Why the host feels faster (loopback vs LAN)
+
+The in-process **HOST** path is not the same network path as a **JOIN** client, even when everyone is in the same room:
+
+| | Host (in-process) | Joiner (LAN) |
+|---|-------------------|--------------|
+| Transport | Client → `127.0.0.1` loopback | Client → host's LAN IP over UDP |
+| Typical RTT | ≈ 0–2 ms | Wired ≈ 1–10 ms; Wi‑Fi often 15–80 ms+ |
+| Snapshot path | Same process; no radio/switch jitter | One hop per direction; loss/jitter possible |
+| Render delay | Still uses the interpolation buffer, but fresh snapshots arrive every tick | Same buffer, but snapshots age while in flight |
+
+So the host's tank tends to feel snappier: inputs reach the authoritative sim almost instantly, server snapshots come back on loopback, and **`LocalPrediction`** reconciles with very low `pred_err`. Joiners pay real one-way latency before the server sees input, then again before the next snapshot arrives; prediction hides most of that for **your own** tank, but remote tanks are always drawn from delayed, interpolated server state.
+
+This is expected — not a simulation bug — as long as joiners are not systematically one tick (or more) behind the host after mitigation (input lead + late-input drain + prediction).
+
+#### Verifying fair play on LAN (F3 checklist)
+
+Use the **joiner's** machine as the probe (the host on loopback will always look “too good” to be meaningful).
+
+1. **Setup:** one machine **HOST** (`Mode = HOST`), 1–3 others **JOIN** with the Share IP from the lobby. Prefer **wired Ethernet** on the first pass.
+2. **Start a match** (auto-start when all ready, or host force-start). Press **F3** on each joiner once `MP_MATCH` is running.
+3. **Healthy joiner (wired LAN)** — expect roughly:
+   - `rtt` — low tens of ms or less on a quiet LAN
+   - `snap/s` — ~60 (one authoritative snapshot per server tick)
+   - `snap_age` — usually 0–2 ticks; sustained 5+ means snapshots are stalling
+   - `in_unacked` — 0 or briefly small; stuck high means INPUTs are not being acked
+   - `pred_err` — small; `[SNAP]` only after big corrections (e.g. wall block)
+4. **Wi‑Fi vs wired:** repeat on the same joiner over Wi‑Fi. `rtt` and `snap_age` should rise versus wired; gameplay may feel slightly heavier but should remain playable.
+5. **2–4 player stress:** all players move and fire at once for ~30 s. Host and joiners should stay in sync visually; joiner `pred_err` should not climb without `[SNAP]` spam. If only the host feels instant while every joiner shows high `snap_age` or `in_unacked`, check firewall UDP on the host port, mixed subnets, or Wi‑Fi isolation — not the fixed-timestep sim.
+
+Press **F3** again to hide the overlay; it does not affect simulation or network traffic.
+
+#### Protocol notes (input tick policy & snapshots)
+
+**Input tick policy (client → server)**
+
+- Clients send **`INPUT`** only (move / fire); never positions or hits.
+- Each input carries `tickStamp = lastServerTick + INPUT_LEAD_TICKS` (**+2 ticks**, ~33 ms at 60 Hz) so a typical LAN one-way delay still lands in the server's near future.
+- Server **`ClientConnection.drainInputsForTick`**: applies every queued command with `tickStamp ≤ currentTick`. Late arrivals (network jitter) are **normalized to the current tick** instead of dropped.
+- **`MAX_INPUT_FUTURE_TICKS = 4`**: stamps farther ahead are rejected (clock skew / abuse guard).
+- Duplicate `(playerId, seq)` pairs are ignored. SNAPSHOT header **`ack`** echoes the highest processed client INPUT seq (F3 `in_unacked`).
+
+**Snapshots (server → client)**
+
+- First tick after **RUNNING**: **`FULL_MAP`** — entire 26×26 tile grid plus entities and `stateHash`.
+- Every later tick: **`DELTA`** — entity pose/state plus **sorted** `(tileIndex, tileOrdinal)` changes only; clients merge into a local tile buffer.
+- If an encoded delta would exceed **`MAX_PACKET_BYTES` (4096)**, the server sends **`FULL_MAP`** for that tick instead.
+- Clients render from immutable merged snapshots; tile destruction on joiners matches the host because deltas (or full resync) carry every mutation.
+
+See **Protocol overview → `SNAPSHOT` body** below for the on-wire layout.
+
+#### Input-lag handling (joiner clients)
+
+See **Protocol notes** above for the full input tick policy. In short: joiners stamp **`+2 ticks` ahead**; the server drains **`tickStamp ≤ currentTick`** and normalises late inputs to the current tick. Constants:
+
+| Constant | Value | Effect |
+|----------|-------|--------|
+| `INPUT_LEAD_TICKS` | 2 | Ticks ahead the client stamps each input |
+| `MAX_INPUT_FUTURE_TICKS` | 4 | Maximum future ticks the server accepts |
+
+The host (loopback, RTT ≈ 0) still queues inputs for two ticks before drain — within the normal 120-tick expiry window — which is why loopback feels tighter than Wi‑Fi joiners even with identical sim rules.
+
+#### Client-side prediction (local player, MP_MATCH only)
+
+To remove the visible RTT lag for the player controlling their own tank, `MP_MATCH` runs a lightweight local preview of the local player's tank in parallel with the authoritative server stream:
+
+- **`LocalPrediction`** (`com.battlecity.game`) runs `MovementSystem` on a private `Tank` copy at 60 Hz, applying the same input sent to the server each tick.
+- On every received **server SNAPSHOT** the predicted pose is **reconciled** against the server-authoritative position:
+  - **Smooth correction** (error ≤ 16 world units): 25 % of the gap is blended away each snapshot — imperceptible to the player.
+  - **Hard snap** (error > 16 world units, or tank died): position jumps to server truth immediately.
+  - Direction and alive flag are always corrected to the server value.
+- **Remote tanks** are never predicted — they use server-snapshot interpolation only.
+- **Snapshot interpolation buffer** (`SnapshotInterpolationBuffer`, default **75 ms** delay on LAN): incoming snapshots are queued by `serverTick` and rendered at `estimatedServerTime − bufferMs`. Out-of-order packets replace the same tick; gaps hold the last good bracket. Tune delay via `SnapshotInterpolationBuffer.DEFAULT_BUFFER_MS` (typical LAN: 50–100 ms). F3 overlay shows `buf=<ms>` during `MP_MATCH`.
+- **Server authority is never compromised**: `LocalPrediction` is render-only state; the server continues to run the deterministic simulation from actual client inputs.
+- **Not active** in LOBBY, SINGLE_PLAYER, or TUTORIAL.
+
+The F3 debug overlay shows `pred_err=<N>` (world units) and `[SNAP]` when a hard reconcile occurs.
+
 #### Match end
 
 - When `matchOver` is set by the server, an **end panel** shows (winner / survivors / duration).
@@ -166,10 +244,15 @@ Press **F3** to toggle the overlay (default **off**; no file I/O, resets each se
 | Field | Source |
 |-------|--------|
 | `tick` | `serverTick` from the latest snapshot (or local tick in offline mode) |
-| `dt`   | Render-frame delta (variable; simulation is fixed at 1/60 s) |
-| `ping` | Estimated RTT from last ping/pong exchange |
-| `loss%` | Recent packet-loss estimate (sent vs acked counters) |
-| `tanks` / `projectiles` | Entity counts from the latest `GameSnapshot` |
+| `dt` | Fixed simulation timestep (1/60 s) |
+| `rtt` | Round-trip time from the last PING/PONG exchange (ms) |
+| `snap/s` | Authoritative snapshots received per second (~1 s rolling window) |
+| `snap_age` | Ticks since the last snapshot arrived (grows when snapshots stall) |
+| `tanks` / `proj` | Entity counts from the latest `GameSnapshot` |
+| `in_unacked` | INPUT messages not yet acked by the server (MP_MATCH only; hidden when 0) |
+| `pred_err` | Client-side prediction positional error in world units (MP_MATCH only) |
+| `[SNAP]` | Shown beside `pred_err` when the last reconcile was a hard snap |
+| `buf` | MP_MATCH snapshot interpolation buffer delay (ms); default 75 |
 
 The overlay reads only from immutable snapshots and `NetStatsSnapshot` — it has no effect on the simulation.
 
@@ -205,7 +288,7 @@ The overlay reads only from immutable snapshots and `NetStatsSnapshot` — it ha
 - **Multiplayer lobby:** player roster, ready badges, countdown timer.
 - **Match:** four-colour tanks, yellow bullets; brick tiles destroyed by matching-coloured shots; tile destruction synced authoritatively by server.
 - **End screen:** duration and surviving-tank count.
-- **F3 debug overlay:** `tick  dt  ping  loss%  tanks  projectiles` in top-left corner.
+- **F3 debug overlay:** `tick  dt  rtt  snap/s  snap_age  tanks  proj` in top-left corner.
 
 ---
 
@@ -218,7 +301,7 @@ All messages share a **23-byte header**: `protocolVersion` (1 B) · `messageType
 | 1  | `JOIN`        | C→S | Request slot; UTF-8 player name (max 32 chars) |
 | 2  | `JOIN_ACK`    | S→C | `assignedPlayerId`, `sessionId`, `mapSeed`, `serverTick`, **`currentPhase`** |
 | 3  | `INPUT`       | C→S | `tickStamp`, `MOVE_DIR` or `FIRE` (RUNNING phase only) |
-| 4  | `SNAPSHOT`    | S→C | Full authoritative state + `stateHash` (RUNNING only) |
+| 4  | `SNAPSHOT`    | S→C | Authoritative state + `stateHash` (RUNNING only); see tile modes below |
 | 5  | `PING`        | C→S | RTT probe — `clientTimeMs` |
 | 6  | `PONG`        | S→C | RTT reply — echoes `clientTimeMs` + `serverTimeMs` |
 | 7  | `DISCONNECT`  | C↔S | Graceful teardown with UTF-8 reason |
@@ -237,6 +320,31 @@ long  mapSeed
 long  serverTick
 byte  currentPhase     ← LobbyPhase ordinal: 0=LOBBY 1=COUNTDOWN 2=RUNNING 3=END
 ```
+
+#### `SNAPSHOT` body (tile-optimized)
+
+The first snapshot after a match enters **RUNNING** uses **`FULL_MAP`** (entire 26×26 tile grid). Every subsequent tick uses **`DELTA`** (only changed tiles — sorted by tile index) plus tanks, projectiles, match flags, and `stateHash`. Clients merge deltas into a local tile buffer for rendering.
+
+```
+byte   formatOrdinal     0 = FULL_MAP, 1 = DELTA
+long   stateHash
+short  mapWidthTiles
+short  mapHeightTiles
+float  tileSize
+if FULL_MAP:
+  (width × height) tile ordinals
+else DELTA:
+  short  tileChangeCount
+  for each change (sorted by tileIndex):
+    short  tileIndex
+    byte   tileOrdinal
+byte   baseDestroyed
+byte   matchOver
+byte   tankCount + tank records (unchanged)
+byte   projectileCount + projectile records (unchanged)
+```
+
+Per-tick traffic drops from ~676 tile bytes to a few bytes when the map is static. Packets stay within **4096 B** (`MAX_PACKET_BYTES`); if a delta would exceed the limit, the server falls back to `FULL_MAP` for that tick.
 
 #### `LOBBY_STATE` body
 ```
@@ -304,7 +412,8 @@ sudo apt install -y openjdk-17-jdk libgl1-mesa-dri libgl1
 - **Transport:** UDP (`DatagramSocket`), background receiver thread, polled on game thread.
 - **Authority:** The server runs the authoritative 60 Hz simulation; clients send input commands only.
 - **Determinism:** Fixed tick order (consume commands → movement → collision → projectiles → damage → events); `TreeMap` for sorted player iteration; seeded RNG; no wall-clock reads inside simulation.
-- **Snapshots:** Full `GameSnapshot` per tick (no deltas in v1) — `serverTick`, deterministic `stateHash`, tanks, projectiles, tile grid.
-- **Reliability:** Per-packet `seq` / `ack`; duplicate inputs ignored; ping/pong RTT; packet-loss from sent vs acked counters.
+- **Snapshots:** First RUNNING tick is **`FULL_MAP`**; later ticks use **`DELTA`** tile changes (sorted indices) with **`FULL_MAP` fallback** when a packet would exceed 4096 B. All carry `serverTick`, `stateHash`, tanks, and projectiles.
+- **Reliability:** Per-packet `seq` / `ack`; duplicate inputs ignored; ping/pong RTT; snapshot SNAPSHOT `ack` echoes highest processed client INPUT seq; F3 overlay shows snap/s, snap_age, and optional `in_unacked`.
+- **Input-lag mitigation:** Clients stamp inputs `lastServerTick + INPUT_LEAD_TICKS` (2 ticks ahead).  Server drains all commands with `tickStamp ≤ currentTick` and normalises late tickStamps to the current tick so `Simulation.applyCommands` accepts them.  Future-stamp guard capped at `MAX_INPUT_FUTURE_TICKS = 4`.
 - **Rendering:** Clients draw from immutable snapshots with linear interpolation (`prev → cur`, alpha); no simulation mutation in render path.
 - **Tank-vs-tank collision:** solid AABB; lower `playerId` wins when both moved into overlap.

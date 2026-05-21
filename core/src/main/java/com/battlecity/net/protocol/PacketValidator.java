@@ -3,6 +3,8 @@ package com.battlecity.net.protocol;
 import com.battlecity.game.Direction;
 import com.battlecity.game.GameCommand;
 import com.battlecity.game.MapFactory;
+import com.battlecity.game.snapshot.SnapshotTileDelta;
+import com.battlecity.game.snapshot.TileChange;
 
 public final class PacketValidator {
     private PacketValidator() {}
@@ -88,9 +90,38 @@ public final class PacketValidator {
     }
 
     private static ValidationResult validateSnapshot(NetMessages.SnapshotPayload payload) {
-        int expectedTiles = MapFactory.DEFAULT_WIDTH * MapFactory.DEFAULT_HEIGHT;
-        if (payload.snapshot().tiles().length != expectedTiles) {
-            return ValidationResult.reject("invalid tile count");
+        int expectedTiles = ProtocolConstants.DEFAULT_TILE_COUNT;
+        if (payload.snapshot().mapWidthTiles() != MapFactory.DEFAULT_WIDTH
+                || payload.snapshot().mapHeightTiles() != MapFactory.DEFAULT_HEIGHT) {
+            return ValidationResult.reject("invalid map dimensions");
+        }
+        if (payload.format() == SnapshotFormat.FULL_MAP) {
+            if (payload.snapshot().tiles().length != expectedTiles) {
+                return ValidationResult.reject("invalid full tile count");
+            }
+        } else if (payload.format() == SnapshotFormat.DELTA) {
+            if (payload.snapshot().tiles().length != 0) {
+                return ValidationResult.reject("delta snapshot must not embed tiles");
+            }
+            if (payload.tileChanges() == null
+                    || payload.tileChanges().size() > ProtocolConstants.MAX_TILE_CHANGES_PER_SNAPSHOT) {
+                return ValidationResult.reject("invalid tile change count");
+            }
+            if (!SnapshotTileDelta.isSortedByIndex(payload.tileChanges())) {
+                return ValidationResult.reject("tile changes not sorted");
+            }
+            for (TileChange change : payload.tileChanges()) {
+                if (change.index() < 0 || change.index() >= expectedTiles) {
+                    return ValidationResult.reject("tile change index out of range");
+                }
+                try {
+                    change.tile().ordinal();
+                } catch (RuntimeException ex) {
+                    return ValidationResult.reject("invalid tile ordinal in change");
+                }
+            }
+        } else {
+            return ValidationResult.reject("unknown snapshot format");
         }
         if (payload.snapshot().tanks().size() > ProtocolConstants.MAX_PLAYERS) {
             return ValidationResult.reject("too many tanks");

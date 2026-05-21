@@ -3,6 +3,7 @@ package com.battlecity.net.protocol;
 import com.battlecity.game.Direction;
 import com.battlecity.game.GameCommand;
 import com.battlecity.game.snapshot.GameSnapshot;
+import com.battlecity.game.snapshot.TileChange;
 import java.util.List;
 
 public final class NetMessages {
@@ -45,7 +46,28 @@ public final class NetMessages {
 
     // ---- S→C: authoritative state snapshot --------------------------------------------------
 
-    public record SnapshotPayload(GameSnapshot snapshot) {}
+    /**
+     * Authoritative match state. {@link SnapshotFormat#FULL_MAP} includes the full tile grid in
+     * {@link GameSnapshot#tiles()}; {@link SnapshotFormat#DELTA} omits tiles and lists
+     * mutations in {@link #tileChanges()} (sorted by tile index).
+     */
+    public record SnapshotPayload(
+            SnapshotFormat format,
+            GameSnapshot snapshot,
+            List<TileChange> tileChanges
+    ) {
+        public SnapshotPayload(GameSnapshot snapshot) {
+            this(SnapshotFormat.FULL_MAP, snapshot, List.of());
+        }
+
+        public static SnapshotPayload fullMap(GameSnapshot snapshot) {
+            return new SnapshotPayload(SnapshotFormat.FULL_MAP, snapshot, List.of());
+        }
+
+        public static SnapshotPayload delta(GameSnapshot snapshot, List<TileChange> tileChanges) {
+            return new SnapshotPayload(SnapshotFormat.DELTA, snapshot, tileChanges);
+        }
+    }
 
     // ---- C↔S: keep-alive / latency ----------------------------------------------------------
 

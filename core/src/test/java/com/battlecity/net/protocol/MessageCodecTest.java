@@ -48,11 +48,13 @@ final class MessageCodecTest {
                 8,
                 snapshot.serverTick()
         );
-        NetPacket original = new NetPacket(header, new NetMessages.SnapshotPayload(snapshot));
+        NetPacket original = new NetPacket(header, NetMessages.SnapshotPayload.fullMap(snapshot));
         NetPacket decoded = MessageCodec.decode(MessageCodec.encode(original));
         NetMessages.SnapshotPayload payload = (NetMessages.SnapshotPayload) decoded.payload();
+        assertEquals(SnapshotFormat.FULL_MAP, payload.format());
         assertEquals(snapshot.stateHash(), payload.snapshot().stateHash());
         assertEquals(snapshot.tanks().size(), payload.snapshot().tanks().size());
+        assertEquals(snapshot.tiles().length, payload.snapshot().tiles().length);
     }
 
     private static PacketHeader header(MessageType type) {

@@ -8,6 +8,7 @@ import com.battlecity.game.GameCommand;
 import com.battlecity.game.QueuedCommand;
 import com.battlecity.game.Direction;
 import java.net.InetSocketAddress;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class InputOrderingTest {
@@ -20,12 +21,26 @@ final class InputOrderingTest {
     }
 
     @Test
-    void drainsInputsForMatchingTickOnly() {
+    void drainsInputsAtOrBeforeCurrentTick() {
+        // Commands with tickStamp <= current tick are all drained (not exact-match only).
         ClientConnection client = new ClientConnection(new InetSocketAddress("127.0.0.1", 1), 0, 1, "Player");
         client.registerInput(new QueuedCommand(0, 4L, 1, GameCommand.MOVE_DIR, Direction.LEFT), 5L);
         client.registerInput(new QueuedCommand(0, 5L, 2, GameCommand.FIRE, null), 5L);
+        // Tick 4: only the tickStamp=4 command qualifies (tickStamp=5 is in the future).
         assertEquals(1, client.drainInputsForTick(4L).size());
+        // Tick 5: tickStamp=5 command now qualifies; tickStamp=4 already removed.
         assertEquals(1, client.drainInputsForTick(5L).size());
         assertEquals(0, client.drainInputsForTick(5L).size());
+    }
+
+    @Test
+    void lateInputDrainedOnCurrentTick() {
+        // Simulates a remote client whose packet arrived after its tickStamp already passed.
+        // tickStamp=3, arrives when server is on tick 5 → must still be applied on tick 5.
+        ClientConnection client = new ClientConnection(new InetSocketAddress("127.0.0.1", 1), 0, 1, "Player");
+        client.registerInput(new QueuedCommand(0, 3L, 1, GameCommand.MOVE_DIR, Direction.UP), 5L);
+        List<QueuedCommand> drained = client.drainInputsForTick(5L);
+        assertEquals(1, drained.size(), "late input (tickStamp=3, now tick=5) must be applied");
+        assertEquals(GameCommand.MOVE_DIR, drained.get(0).command());
     }
 }

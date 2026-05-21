@@ -6,6 +6,7 @@ import com.battlecity.game.Tile;
 import com.battlecity.game.snapshot.GameSnapshot;
 import com.battlecity.game.snapshot.ProjectileSnapshot;
 import com.battlecity.game.snapshot.TankSnapshot;
+import com.battlecity.game.snapshot.TileChange;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -144,14 +145,43 @@ public final class MessageCodec {
 
     // ---- SNAPSHOT ---------------------------------------------------------------------------
 
+    /**
+     * Wire layout (after header):
+     * <pre>
+     *   byte   formatOrdinal   ({@link SnapshotFormat})
+     *   long   stateHash
+     *   short  mapWidthTiles
+     *   short  mapHeightTiles
+     *   float  tileSize
+     *   if FULL_MAP:
+     *     (width×height) tile ordinals
+     *   else DELTA:
+     *     short  tileChangeCount
+     *     for each change (sorted by index):
+     *       short  tileIndex
+     *       byte   tileOrdinal
+     *   byte   baseDestroyed
+     *   byte   matchOver
+     *   tanks + projectiles (unchanged)
+     * </pre>
+     */
     private static void writeSnapshot(ByteBuffer buffer, NetMessages.SnapshotPayload payload) {
         GameSnapshot snapshot = payload.snapshot();
+        buffer.put((byte) payload.format().id());
         buffer.putLong(snapshot.stateHash());
         buffer.putShort((short) snapshot.mapWidthTiles());
         buffer.putShort((short) snapshot.mapHeightTiles());
         buffer.putFloat(snapshot.tileSize());
-        for (Tile tile : snapshot.tiles()) {
-            buffer.put((byte) tile.ordinal());
+        if (payload.format() == SnapshotFormat.FULL_MAP) {
+            for (Tile tile : snapshot.tiles()) {
+                buffer.put((byte) tile.ordinal());
+            }
+        } else {
+            buffer.putShort((short) payload.tileChanges().size());
+            for (TileChange change : payload.tileChanges()) {
+                buffer.putShort((short) change.index());
+                buffer.put((byte) change.tile().ordinal());
+            }
         }
         buffer.put((byte) (snapshot.baseDestroyed() ? 1 : 0));
         buffer.put((byte) (snapshot.matchOver() ? 1 : 0));
@@ -182,13 +212,27 @@ public final class MessageCodec {
     }
 
     private static NetMessages.SnapshotPayload readSnapshot(ByteBuffer buffer) {
+        SnapshotFormat format = SnapshotFormat.fromId(Byte.toUnsignedInt(buffer.get()));
         long stateHash = buffer.getLong();
         int width      = Short.toUnsignedInt(buffer.getShort());
         int height     = Short.toUnsignedInt(buffer.getShort());
         float tileSize = buffer.getFloat();
-        Tile[] tiles   = new Tile[width * height];
-        for (int i = 0; i < tiles.length; i++) {
-            tiles[i] = Tile.fromOrdinal(Byte.toUnsignedInt(buffer.get()));
+        Tile[] tiles = new Tile[0];
+        List<TileChange> tileChanges = List.of();
+        if (format == SnapshotFormat.FULL_MAP) {
+            tiles = new Tile[width * height];
+            for (int i = 0; i < tiles.length; i++) {
+                tiles[i] = Tile.fromOrdinal(Byte.toUnsignedInt(buffer.get()));
+            }
+        } else {
+            int changeCount = Short.toUnsignedInt(buffer.getShort());
+            List<TileChange> changes = new ArrayList<>(changeCount);
+            for (int i = 0; i < changeCount; i++) {
+                int index = Short.toUnsignedInt(buffer.getShort());
+                Tile tile = Tile.fromOrdinal(Byte.toUnsignedInt(buffer.get()));
+                changes.add(new TileChange(index, tile));
+            }
+            tileChanges = List.copyOf(changes);
         }
         boolean baseDestroyed = buffer.get() != 0;
         boolean matchOver     = buffer.get() != 0;
@@ -227,7 +271,7 @@ public final class MessageCodec {
                 0L, stateHash, width, height, tileSize,
                 tiles, List.copyOf(tanks), List.copyOf(projectiles),
                 baseDestroyed, matchOver);
-        return new NetMessages.SnapshotPayload(snapshot);
+        return new NetMessages.SnapshotPayload(format, snapshot, tileChanges);
     }
 
     // ---- PING / PONG ------------------------------------------------------------------------

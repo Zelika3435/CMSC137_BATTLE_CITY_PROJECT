@@ -149,9 +149,10 @@ public final class SinglePlayerPhaseDriver implements PhaseHandler {
 
         GameSnapshot snap = match.snapshot();
         ctx.debugOverlay().update(new NetStatsSnapshot(
-                snap.serverTick(), FIXED_DT, 0, 0f,
+                snap.serverTick(), FIXED_DT, 0, 0f, 0,
                 snap.tanks().size(), snap.projectiles().size(),
-                snap.tanks().size() + snap.projectiles().size()));
+                snap.tanks().size() + snap.projectiles().size(),
+                0f, false, 0, 0));
     }
 
     private KeyboardInputMapper.LocalInput pollInput() {
