@@ -152,8 +152,9 @@ Once connected, the **LobbyScreen** shows:
 - **WASD / arrow keys** — move / face; **SPACE** — fire.
 - The client only sends input commands; the server is authoritative for all positions, collisions, and tile destruction.
 - **Tank destroyed:** grey overlay + **respawn countdown** (~2 s) while your base still exists; movement and fire are blocked.
-- **Defeat** (base destroyed / eliminated): grey **YOU LOSE** overlay — **ENTER** or **ESC** quits to the main menu (joiner leaves the party; host ends the session for everyone).
-- **Victory** (match over, you survived): brief “match over” panel, then auto-return to lobby (or **ENTER** to skip).
+- **Defeat** (your base destroyed / you are eliminated): grey **YOU LOSE** overlay — **ENTER** or **ESC** quits for you only; **other players keep playing** until one survivor remains.
+- **Victory** (you are the last tank standing): brief “match over” panel, then auto-return to lobby (or **ENTER** to skip).
+- **Host disconnect** (not host death): ends the party for all joiners — see **Host leaves** above.
 
 #### Why the host feels faster (loopback vs LAN)
 

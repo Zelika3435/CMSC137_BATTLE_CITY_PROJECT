@@ -101,14 +101,18 @@ public final class MpMatchPhaseDriver implements PhaseHandler {
             runTick();
             accumulator -= FIXED_DT;
             GameSnapshot snap = netClient.currentSnapshot();
-            if (snap != null && snap.matchOver()) {
-                if (MatchScreenOverlay.localPlayerLost(snap, netClient.playerId())) {
+            if (snap != null) {
+                int playerId = netClient.playerId();
+                if (MatchScreenOverlay.localPlayerLost(snap, playerId)) {
                     defeatOverlayActive = true;
-                } else {
-                    endOverlayTimer = END_OVERLAY_DURATION;
+                    accumulator = 0f;
+                    return AppPhase.MP_MATCH;
                 }
-                accumulator = 0f;
-                return AppPhase.MP_MATCH;
+                if (snap.matchOver()) {
+                    endOverlayTimer = END_OVERLAY_DURATION;
+                    accumulator = 0f;
+                    return AppPhase.MP_MATCH;
+                }
             }
         }
         return AppPhase.MP_MATCH;

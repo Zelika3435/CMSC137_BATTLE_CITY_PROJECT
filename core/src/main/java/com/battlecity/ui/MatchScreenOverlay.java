@@ -24,10 +24,10 @@ public final class MatchScreenOverlay {
         if (snap == null) {
             return LocalStatus.PLAYING;
         }
-        if (snap.matchOver() && localPlayerLost(snap, localPlayerId)) {
+        TankSnapshot local = tankForPlayer(snap, localPlayerId);
+        if (local != null && local.eliminated()) {
             return LocalStatus.DEFEATED;
         }
-        TankSnapshot local = tankForPlayer(snap, localPlayerId);
         if (local != null
                 && !local.alive()
                 && !local.eliminated()

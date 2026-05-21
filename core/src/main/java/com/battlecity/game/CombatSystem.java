@@ -61,8 +61,8 @@ public final class CombatSystem {
                             tank.respawnCooldownTicks = -1; // Permanently dead / eliminated
                         }
                         if (baseOwnerId == 0) {
+                            // Per-player elimination only; global matchOver is decided in Simulation.
                             world.baseDestroyed = true;
-                            world.matchOver = true;
                         }
                     }
                 }

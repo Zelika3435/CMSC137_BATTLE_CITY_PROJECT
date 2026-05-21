@@ -108,7 +108,7 @@ final class SimTest {
 
     @Test
     void baseHit_emitsEventAndEndsMatch() {
-        Simulation simulation = new Simulation(World.createDefault(), false, 0L);
+        Simulation simulation = new Simulation(World.createDefault(), true, 0L);
         World world = simulation.world();
         for (Tank tank : world.tanks) {
             if (tank != null && tank.playerId != 0) {
@@ -216,8 +216,37 @@ final class SimTest {
     }
 
     @Test
-    void playerEliminationWhenBaseAnnihilated() {
+    void hostEliminated_multiplayerMode_matchContinuesForOthers() {
         Simulation simulation = new Simulation(World.createDefault(), false, 0L);
+        World world = simulation.world();
+        Tank host = world.tanks[0];
+        Tank opponent = world.tanks[1];
+
+        host.eliminated = true;
+        host.alive = false;
+        simulation.updateTick();
+
+        assertFalse(world.matchOver, "host losing must not end the match for everyone");
+        assertFalse(opponent.eliminated);
+    }
+
+    @Test
+    void lastStanding_multiplayerMode_endsMatch() {
+        Simulation simulation = new Simulation(World.createDefault(), false, 0L);
+        World world = simulation.world();
+        for (int i = 0; i < World.MAX_PLAYERS; i++) {
+            Tank tank = world.tankByPlayerId(i);
+            if (tank != null && tank.playerId != 1) {
+                tank.eliminated = true;
+            }
+        }
+        simulation.updateTick();
+        assertTrue(world.matchOver);
+    }
+
+    @Test
+    void playerEliminationWhenBaseAnnihilated() {
+        Simulation simulation = new Simulation(World.createDefault(), true, 0L);
         World world = simulation.world();
         Tank player = world.tanks[0];
 

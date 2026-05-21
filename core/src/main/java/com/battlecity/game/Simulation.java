@@ -133,26 +133,7 @@ public final class Simulation {
         ProjectileSystem.tick(world, FIXED_DT_SECONDS);
         lastAppliedEvents.addAll(CombatSystem.processPending(world));
 
-        // Check match-over conditions
-        // 1. If Player 0 is eliminated (no base left and dead), match is over (loss)
-        Tank p0 = world.tankByPlayerId(0);
-        if (p0 != null && p0.eliminated) {
-            world.matchOver = true;
-        }
-
-        // 2. If all other players are eliminated, match is over (win for Player 0)
-        if (world.map.widthTiles() != MapFactory.TUTORIAL_WIDTH) {
-            int otherActive = 0;
-            for (int i = 1; i < World.MAX_PLAYERS; i++) {
-                Tank other = world.tankByPlayerId(i);
-                if (other != null && !other.eliminated) {
-                    otherActive++;
-                }
-            }
-            if (otherActive == 0 && p0 != null && !p0.eliminated) {
-                world.matchOver = true;
-            }
-        }
+        checkMatchOver();
 
         world.tickCount++;
     }
@@ -167,6 +148,50 @@ public final class Simulation {
 
     public List<GameEvent> drainEvents() {
         return world.events.drain();
+    }
+
+    /**
+     * Single-player vs bots: match ends when player 0 loses or all bots are eliminated.
+     * Multiplayer: match ends only when at most one player remains (last standing); one player
+     * losing (including the host) does not end the round for everyone else.
+     */
+    private void checkMatchOver() {
+        if (world.map.widthTiles() == MapFactory.TUTORIAL_WIDTH
+                && world.map.heightTiles() == MapFactory.TUTORIAL_HEIGHT) {
+            return;
+        }
+
+        if (offlineBotMode) {
+            Tank p0 = world.tankByPlayerId(0);
+            if (p0 != null && p0.eliminated) {
+                if (!world.hasBaseLeft(0)) {
+                    world.baseDestroyed = true;
+                }
+                world.matchOver = true;
+                return;
+            }
+            int otherActive = 0;
+            for (int i = 1; i < World.MAX_PLAYERS; i++) {
+                Tank other = world.tankByPlayerId(i);
+                if (other != null && !other.eliminated) {
+                    otherActive++;
+                }
+            }
+            if (otherActive == 0 && p0 != null && !p0.eliminated) {
+                world.matchOver = true;
+            }
+        } else {
+            int survivors = 0;
+            for (int i = 0; i < World.MAX_PLAYERS; i++) {
+                Tank tank = world.tankByPlayerId(i);
+                if (tank != null && !tank.eliminated) {
+                    survivors++;
+                }
+            }
+            if (survivors <= 1) {
+                world.matchOver = true;
+            }
+        }
     }
 
     private static final class TickInput {
