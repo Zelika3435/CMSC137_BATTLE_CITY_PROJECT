@@ -48,8 +48,16 @@ sudo apt install -y openjdk-17-jdk libgl1-mesa-dri libgl1
 
 ```bash
 ./scripts/run-client-wsl.sh
-# or: ./gradlew :lwjgl3:runWsl
+# or: ./gradlew :lwjgl3:run
 ```
+
+If the window opens but stays **blank/gray**, do **not** use software OpenGL on WSLg — that is what caused the blank window. Instead:
+
+1. Close the client (Ctrl+C in its terminal).
+2. Update WSL from **PowerShell (Admin)**: `wsl --update`, then restart WSL.
+3. Retry: `./scripts/run-client-wsl.sh` (uses WSLg GPU / D3D12).
+4. Last resort software fallback: `./scripts/run-client-wsl-software.sh`
+5. **Most reliable:** run the client on **Windows** (not WSL): open PowerShell, `cd` to a copy of the project on `C:\`, then `.\gradlew.bat :lwjgl3:run` (requires JDK 17+ on Windows).
 
 **Native Linux** (real GPU):
 
@@ -61,15 +69,17 @@ sudo apt install -y openjdk-17-jdk libgl1-mesa-dri libgl1
 |-------|-----|
 | `-XstartOnFirstThread` on Linux | Run `./gradlew --stop`, pull latest `lwjgl3/build.gradle` (Mac-only flag) |
 | PipeWire / ALSA errors | Harmless on WSL; launcher disables audio under WSL automatically |
-| `libEGL` / MESA / black window | Use `./gradlew :lwjgl3:runWsl` or `./scripts/run-client-wsl.sh` |
+| `libEGL` / MESA / black window | Use `./scripts/run-client-wsl.sh` (WSLg GPU). Avoid `runWsl`/software GL unless GPU path fails |
+| Blank gray window (title may show "Battle City") | You likely used software OpenGL (`runWsl` / old `run-client-wsl.sh`). Use `./scripts/run-client-wsl.sh` or run `.\gradlew.bat :lwjgl3:run` on Windows |
 | No window at all | `export DISPLAY=:0` (WSLg); install `libgl1-mesa-dri` |
 
 `-XstartOnFirstThread` is **macOS only** (never used on Linux/WSL).
 
-**Offline skirmish** (1 human vs bots, no server):
+**Offline single player / tutorial** (no server needed):
 
 ```bash
 ./gradlew :lwjgl3:run
+# → starts at the main menu; choose Single Player or Tutorial
 ```
 
 **Tests:**
@@ -78,15 +88,34 @@ sudo apt install -y openjdk-17-jdk libgl1-mesa-dri libgl1
 ./gradlew :core:test
 ```
 
+### App phases
+The client always starts at the **main menu**; no simulation or network is started until the player
+picks a mode:
+
+| Phase | Tick loop | Description |
+|-------|-----------|-------------|
+| `MAIN_MENU` | variable dt | Keyboard menu: Single Player · Multiplayer · Tutorial |
+| `SP_PRESTART` | variable dt | Seed picker before single-player match (Fixed 42 or Random) |
+| `SINGLE_PLAYER` | 60 Hz fixed | 1 human vs 3 bot enemies; deterministic for a given seed |
+| `TUTORIAL` | 60 Hz fixed | 1 human, no bots — learn controls |
+| `MP_CONNECT` | variable dt | Sending JOIN, waiting for ack |
+| `MP_LOBBY` | variable dt | Connected, waiting for first server snapshot |
+| `MP_MATCH` | 60 Hz fixed | Multiplayer match; renders server snapshots |
+| `MATCH_END` | variable dt | Outcome screen; press ENTER to return to menu |
+
 ### Controls
-- **Move / facing:** Arrow keys or WASD (axis-aligned)
+- **Navigate menu / seed panel:** W/S or UP/DOWN; **confirm:** ENTER or SPACE; **back:** ESC
+- **Move / facing (in-game):** Arrow keys or WASD (axis-aligned)
 - **Fire:** SPACE
 - **Debug overlay** (tick, ping, packet loss, entity counts): **F3** (default **off**)
+- **Return to menu (in-game):** ESC
 
 ### What you should see
+- Main menu with Single Player / Tutorial / Multiplayer / Quit options
 - 26×26 tile arena (steel border, brick clusters, **BASE** at top-center)
 - Four player tanks (distinct colors; your tank highlighted white)
 - Yellow bullets; brick destruction synced by server
+- Match-end screen with duration and tanks-remaining count
 - With F3: `tick`, `dt`, `ping`, `loss%`, tank/projectile counts
 
 ### Protocol overview (v1, little-endian binary)
@@ -111,13 +140,14 @@ Invalid packets are rejected (never applied). Clients **never** send positions.
 | `server/` | Headless server entry (`HeadlessServer`) |
 
 ### Core packages
-- `com.battlecity.game` — `Simulation`, `World`, systems, events, `StateHasher`
+- `com.battlecity.core` — `CoreGame` (phase state machine), `AppPhase`, `PhaseHandler`, phase drivers
+- `com.battlecity.game` — `Simulation`, `World`, `LocalMatchController`, systems, events, `StateHasher`
 - `com.battlecity.game.snapshot` — immutable `GameSnapshot`, `NetStatsSnapshot`
 - `com.battlecity.net.protocol` — `MessageCodec`, `PacketValidator`
 - `com.battlecity.net.server` / `net.client` — `GameServer`, `GameClient`
-- `com.battlecity.render` — `SnapshotRenderer` (read-only draw)
+- `com.battlecity.render` — `SnapshotRenderer` (read-only draw from snapshots)
 - `com.battlecity.input` — keyboard → commands
-- `com.battlecity.ui` — debug overlay
+- `com.battlecity.ui` — `MainMenuScreen`, `SinglePlayerPreStartScreen`, `ConnectScreen`, `LobbyScreen`, `MatchEndScreen`, `DebugOverlay`
 
 ### Notes
 - Tank-vs-tank: solid AABB; lower `playerId` wins when both moved into overlap.

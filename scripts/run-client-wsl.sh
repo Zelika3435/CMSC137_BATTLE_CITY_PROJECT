@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# WSL-friendly client launch (software OpenGL + DISPLAY=:0 if needed).
+# WSLg client launch (GPU via D3D12). Use run-client-wsl-software.sh if this shows a blank window.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOST="${1:-127.0.0.1}"
 PORT="${2:-9000}"
 
-export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
-export GALLIUM_DRIVER="${GALLIUM_DRIVER:-llvmpipe}"
 export DISPLAY="${DISPLAY:-:0}"
+# Required for WSLg GPU passthrough (Windows 11).
+export LD_LIBRARY_PATH="/usr/lib/wsl/lib:${LD_LIBRARY_PATH:-}"
+unset LIBGL_ALWAYS_SOFTWARE
+unset GALLIUM_DRIVER
 
-./gradlew :lwjgl3:runWsl -PgameArgs="$HOST $PORT"
+./gradlew :lwjgl3:run --args="$HOST $PORT"

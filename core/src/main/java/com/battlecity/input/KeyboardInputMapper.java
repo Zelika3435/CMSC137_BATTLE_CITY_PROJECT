@@ -34,5 +34,15 @@ public final class KeyboardInputMapper {
         return new LocalInput(moveDir, firePressed, debugToggle);
     }
 
+    /**
+     * Clears edge-detection state. Call when entering a simulation phase so key presses made in
+     * menu phases (e.g. SPACE to confirm a menu selection) don't carry over as fire/toggle events
+     * on the first simulation tick.
+     */
+    public void reset() {
+        prevSpaceDown = false;
+        prevF3Down = false;
+    }
+
     public record LocalInput(Direction moveDir, boolean firePressed, boolean debugToggle) {}
 }
